@@ -6,7 +6,10 @@ mod physics3;
 mod pose3;
 
 pub use cdi3::{Cdi3, CdiEntry, CdiPart};
-pub use expression3::{Expression3, ExpressionBlend, ExpressionParameter};
+pub use expression3::{
+    Expression3, ExpressionBlend, ExpressionParameter, apply_expression_blend,
+    apply_expression_parameter,
+};
 pub use model3::{Group, HitArea, Model3, MotionReference};
 pub use motion3::{
     Motion3, MotionCurve, MotionMeta, MotionPoint, MotionSegment, apply_motion_fade, easing_sine,

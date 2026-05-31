@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 use crate::{Error, Result};
 
@@ -63,7 +63,11 @@ pub struct ExpressionParameter {
     id: String,
     #[serde(rename = "Value")]
     value: f32,
-    #[serde(rename = "Blend", default)]
+    #[serde(
+        rename = "Blend",
+        default,
+        deserialize_with = "deserialize_expression_blend"
+    )]
     blend: ExpressionBlend,
 }
 
@@ -81,13 +85,57 @@ impl ExpressionParameter {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Deserialize, Default)]
+pub fn apply_expression_parameter(
+    current: f32,
+    parameter: &ExpressionParameter,
+    weight: f32,
+) -> f32 {
+    apply_expression_blend(current, parameter.value, parameter.blend, weight)
+}
+
+pub fn apply_expression_blend(
+    current: f32,
+    value: f32,
+    blend: ExpressionBlend,
+    weight: f32,
+) -> f32 {
+    match blend {
+        ExpressionBlend::Add => current + (value * weight),
+        ExpressionBlend::Multiply => current * (1.0 + (value - 1.0) * weight),
+        ExpressionBlend::Overwrite if weight == 1.0 => value,
+        ExpressionBlend::Overwrite => (current * (1.0 - weight)) + (value * weight),
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum ExpressionBlend {
-    #[serde(rename = "Add")]
     Add,
-    #[serde(rename = "Multiply")]
     Multiply,
-    #[default]
-    #[serde(rename = "Overwrite")]
     Overwrite,
+}
+
+impl Default for ExpressionBlend {
+    fn default() -> Self {
+        Self::Add
+    }
+}
+
+impl ExpressionBlend {
+    fn from_raw(value: Option<&str>) -> Self {
+        match value {
+            Some("Multiply") => Self::Multiply,
+            Some("Overwrite") => Self::Overwrite,
+            _ => Self::Add,
+        }
+    }
+}
+
+fn deserialize_expression_blend<'de, D>(
+    deserializer: D,
+) -> std::result::Result<ExpressionBlend, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer)
+        .map(|value| ExpressionBlend::from_raw(value.as_deref()))
 }
