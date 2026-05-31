@@ -7,7 +7,7 @@ mod offsets;
 
 pub use art_meshes::{
     Moc3ArtMeshInfo, Moc3ArtMeshKeyformInfo, Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3DrawableMesh,
-    Moc3DrawableVertex, build_moc3_drawable_mesh,
+    Moc3DrawableVertex, build_moc3_drawable_mesh, build_moc3_drawable_meshes,
 };
 pub use canvas::Moc3CanvasInfo;
 pub use counts::Moc3CountInfo;

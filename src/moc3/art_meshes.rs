@@ -537,6 +537,24 @@ pub fn build_moc3_drawable_mesh(
     })
 }
 
+pub fn build_moc3_drawable_meshes(
+    art_meshes: &Moc3ArtMeshes,
+    keyforms: &Moc3ArtMeshKeyforms,
+) -> Option<Vec<Moc3DrawableMesh>> {
+    let mut meshes = Vec::with_capacity(art_meshes.meshes().len());
+
+    for art_mesh_index in 0..art_meshes.meshes().len() {
+        meshes.push(build_moc3_drawable_mesh(
+            art_meshes,
+            keyforms,
+            art_mesh_index,
+            0,
+        )?);
+    }
+
+    Some(meshes)
+}
+
 fn read_i32_section(
     bytes: &[u8],
     offsets: &Moc3SectionOffsets,
