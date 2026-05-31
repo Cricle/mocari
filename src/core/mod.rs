@@ -17,8 +17,9 @@ pub use deformers::{
 };
 pub use ids::{DrawableId, Id, ParameterId, PartId};
 pub use interpolation::{
-    InterpolationGroup, InterpolationOutput, interpolate_float32, interpolate_float32_array,
-    interpolate_float32_grouped, interpolate_int32,
+    ArrayInterpolationGroup, InterpolationGroup, InterpolationOutput, interpolate_float32,
+    interpolate_float32_array, interpolate_float32_array_grouped, interpolate_float32_grouped,
+    interpolate_int32,
 };
 pub use keyforms::{
     KeyformAxis, KeyformAxisInterval, KeyformRuntimeSlot, compute_keyform_axis_interval,
