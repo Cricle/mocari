@@ -339,6 +339,70 @@ fn creates_mask_pipeline_and_encodes_mask_draw_call() {
 }
 
 #[test]
+fn creates_masked_pipeline_and_encodes_masked_draw_call() {
+    let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let texture = renderer
+        .create_rgba8_texture(&device, &queue, 1, 1, &[255, 255, 255, 255])
+        .unwrap();
+    let mask_target = renderer.create_mask_render_target(&device, 16).unwrap();
+    let transform = renderer.create_transform(&device, &Matrix44::identity());
+    let clip_params =
+        renderer.create_clip_params(&device, &Matrix44::identity(), WgpuMaskChannel::Red);
+    let mesh = test_mesh_with_draw_order(0, 0.0);
+    let buffers = WgpuMeshBuffers::from_drawables(&device, &[mesh]).unwrap();
+    let drawable = &buffers.drawables()[0];
+    let target = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("live2d.test.masked_pipeline_target"),
+        size: wgpu::Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("live2d.test.masked_pipeline_encoder"),
+    });
+
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("live2d.test.masked_pipeline_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+
+        pass.set_pipeline(renderer.masked_pipeline_for_blend_mode(Moc3DrawableBlendMode::Normal));
+        pass.set_bind_group(0, texture.bind_group(), &[]);
+        pass.set_bind_group(1, transform.bind_group(), &[]);
+        pass.set_bind_group(2, mask_target.bind_group(), &[]);
+        pass.set_bind_group(3, clip_params.bind_group(), &[]);
+        pass.set_vertex_buffer(0, drawable.vertex_buffer().slice(..));
+        pass.set_index_buffer(drawable.index_buffer().slice(..), wgpu::IndexFormat::Uint16);
+        pass.draw_indexed(0..drawable.index_count(), 0, 0..1);
+    }
+
+    let _ = encoder.finish();
+}
+
+#[test]
 fn draws_prepared_mask_contexts_into_mask_target() {
     let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
     let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);

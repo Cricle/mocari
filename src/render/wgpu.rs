@@ -815,6 +815,9 @@ pub struct WgpuLive2dRenderer {
     additive_pipeline: wgpu::RenderPipeline,
     multiplicative_pipeline: wgpu::RenderPipeline,
     mask_pipeline: wgpu::RenderPipeline,
+    masked_normal_pipeline: wgpu::RenderPipeline,
+    masked_additive_pipeline: wgpu::RenderPipeline,
+    masked_multiplicative_pipeline: wgpu::RenderPipeline,
     texture_bind_group_layout: wgpu::BindGroupLayout,
     transform_bind_group_layout: wgpu::BindGroupLayout,
     mask_params_bind_group_layout: wgpu::BindGroupLayout,
@@ -903,6 +906,10 @@ impl WgpuLive2dRenderer {
             label: Some("live2d.shader"),
             source: wgpu::ShaderSource::Wgsl(live2d_wgsl_source().into()),
         });
+        let masked_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("live2d.masked.shader"),
+            source: wgpu::ShaderSource::Wgsl(live2d_masked_wgsl_source().into()),
+        });
         let mask_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("live2d.mask.shader"),
             source: wgpu::ShaderSource::Wgsl(mask_wgsl_source().into()),
@@ -956,6 +963,42 @@ impl WgpuLive2dRenderer {
             &mask_shader,
             "live2d.mask.pipeline",
         );
+        let masked_bind_group_layouts = [
+            Some(&texture_bind_group_layout),
+            Some(&transform_bind_group_layout),
+            Some(&texture_bind_group_layout),
+            Some(&clip_params_bind_group_layout),
+        ];
+        let masked_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("live2d.masked.pipeline.layout"),
+                bind_group_layouts: &masked_bind_group_layouts,
+                immediate_size: 0,
+            });
+        let masked_normal_pipeline = create_live2d_pipeline(
+            device,
+            &masked_pipeline_layout,
+            &masked_shader,
+            color_format,
+            Moc3DrawableBlendMode::Normal,
+            "live2d.masked.pipeline.normal",
+        );
+        let masked_additive_pipeline = create_live2d_pipeline(
+            device,
+            &masked_pipeline_layout,
+            &masked_shader,
+            color_format,
+            Moc3DrawableBlendMode::Additive,
+            "live2d.masked.pipeline.additive",
+        );
+        let masked_multiplicative_pipeline = create_live2d_pipeline(
+            device,
+            &masked_pipeline_layout,
+            &masked_shader,
+            color_format,
+            Moc3DrawableBlendMode::Multiplicative,
+            "live2d.masked.pipeline.multiplicative",
+        );
         let identity_transform =
             create_wgpu_transform(device, &transform_bind_group_layout, &Matrix44::identity());
 
@@ -964,6 +1007,9 @@ impl WgpuLive2dRenderer {
             additive_pipeline,
             multiplicative_pipeline,
             mask_pipeline,
+            masked_normal_pipeline,
+            masked_additive_pipeline,
+            masked_multiplicative_pipeline,
             texture_bind_group_layout,
             transform_bind_group_layout,
             mask_params_bind_group_layout,
@@ -990,6 +1036,17 @@ impl WgpuLive2dRenderer {
 
     pub fn mask_pipeline(&self) -> &wgpu::RenderPipeline {
         &self.mask_pipeline
+    }
+
+    pub fn masked_pipeline_for_blend_mode(
+        &self,
+        blend_mode: Moc3DrawableBlendMode,
+    ) -> &wgpu::RenderPipeline {
+        match blend_mode {
+            Moc3DrawableBlendMode::Normal => &self.masked_normal_pipeline,
+            Moc3DrawableBlendMode::Additive => &self.masked_additive_pipeline,
+            Moc3DrawableBlendMode::Multiplicative => &self.masked_multiplicative_pipeline,
+        }
     }
 
     pub fn texture_bind_group_layout(&self) -> &wgpu::BindGroupLayout {
