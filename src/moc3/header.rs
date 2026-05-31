@@ -61,6 +61,14 @@ impl Moc3Version {
             _ => None,
         }
     }
+
+    pub(crate) fn count_info_word_count(self) -> usize {
+        match self {
+            Self::V3_0_0 | Self::V3_3_0 | Self::V4_0_0 => 23,
+            Self::V4_2_0 => 32,
+            Self::V5_0_0 => 35,
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
