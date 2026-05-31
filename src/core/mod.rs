@@ -1,3 +1,4 @@
+mod deformers;
 mod ids;
 mod interpolation;
 mod keyforms;
@@ -5,6 +6,7 @@ mod math;
 mod parameters;
 mod physics;
 
+pub use deformers::rotation_deformer_transform_point;
 pub use ids::{DrawableId, Id, ParameterId, PartId};
 pub use interpolation::{
     InterpolationGroup, InterpolationOutput, interpolate_float32, interpolate_float32_array,
