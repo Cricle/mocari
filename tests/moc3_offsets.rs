@@ -10,6 +10,21 @@ fn parses_confirmed_moc3_section_offsets() {
 }
 
 #[test]
+fn parses_full_moc3_section_offset_table() {
+    let mut bytes = moc3_with_offsets(0x7c0, 0x840, 0x900);
+    bytes[0x48..0x4c].copy_from_slice(&0x880u32.to_le_bytes());
+    bytes[0x2bc..0x2c0].copy_from_slice(&0u32.to_le_bytes());
+
+    let offsets = Moc3SectionOffsets::parse(&bytes).unwrap();
+
+    assert_eq!(offsets.section_offsets().len(), 160);
+    assert_eq!(offsets.section_offset(0), Some(0x7c0));
+    assert_eq!(offsets.section_offset(1), Some(0x840));
+    assert_eq!(offsets.section_offset(2), Some(0x880));
+    assert_eq!(offsets.section_offset(160), None);
+}
+
+#[test]
 fn rejects_moc3_without_section_offset_table() {
     let bytes = header_only();
     let error = Moc3SectionOffsets::parse(&bytes).unwrap_err();
@@ -28,6 +43,16 @@ fn rejects_out_of_range_moc3_section_offsets() {
 #[test]
 fn rejects_moc3_section_offsets_that_point_into_header_or_table() {
     let bytes = moc3_with_offsets(0, 0x840, 0x900);
+    let error = Moc3SectionOffsets::parse(&bytes).unwrap_err();
+
+    assert!(matches!(error, Error::InvalidMoc3 { .. }));
+}
+
+#[test]
+fn rejects_moc3_section_offsets_that_point_into_full_offset_table() {
+    let mut bytes = moc3_with_offsets(0x7c0, 0x840, 0x900);
+    bytes[0x48..0x4c].copy_from_slice(&0x100u32.to_le_bytes());
+
     let error = Moc3SectionOffsets::parse(&bytes).unwrap_err();
 
     assert!(matches!(error, Error::InvalidMoc3 { .. }));

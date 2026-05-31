@@ -3,43 +3,56 @@ use crate::{Error, Result};
 use super::{Endianness, Moc3Header};
 
 const OFFSET_TABLE_START: usize = 0x40;
-const CONFIRMED_OFFSET_COUNT: usize = 2;
+const OFFSET_COUNT: usize = 160;
 const U32_SIZE: usize = 4;
-const CONFIRMED_TABLE_END: usize = OFFSET_TABLE_START + CONFIRMED_OFFSET_COUNT * U32_SIZE;
+const OFFSET_TABLE_END: usize = OFFSET_TABLE_START + OFFSET_COUNT * U32_SIZE;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Moc3SectionOffsets {
-    count_info_offset: u32,
-    canvas_info_offset: u32,
+    offsets: [u32; OFFSET_COUNT],
 }
 
 impl Moc3SectionOffsets {
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let header = Moc3Header::parse(bytes)?;
-        let table_len = CONFIRMED_OFFSET_COUNT * U32_SIZE;
+        let table_len = OFFSET_COUNT * U32_SIZE;
         if bytes.len() < OFFSET_TABLE_START + table_len {
             return Err(invalid_offsets("section offset table is incomplete"));
         }
 
-        let count_info_offset = read_u32(bytes, OFFSET_TABLE_START, header.endianness());
-        let canvas_info_offset =
-            read_u32(bytes, OFFSET_TABLE_START + U32_SIZE, header.endianness());
+        let mut offsets = [0; OFFSET_COUNT];
+        for (index, offset) in offsets.iter_mut().enumerate() {
+            *offset = read_u32(
+                bytes,
+                OFFSET_TABLE_START + index * U32_SIZE,
+                header.endianness(),
+            );
+        }
 
-        validate_offset(bytes, count_info_offset, "count info")?;
-        validate_offset(bytes, canvas_info_offset, "canvas info")?;
+        validate_required_offset(bytes, offsets[0], "count info")?;
+        validate_required_offset(bytes, offsets[1], "canvas info")?;
 
-        Ok(Self {
-            count_info_offset,
-            canvas_info_offset,
-        })
+        for (index, offset) in offsets.iter().copied().enumerate().skip(2) {
+            validate_optional_offset(bytes, offset, index)?;
+        }
+
+        Ok(Self { offsets })
     }
 
     pub fn count_info_offset(&self) -> u32 {
-        self.count_info_offset
+        self.offsets[0]
     }
 
     pub fn canvas_info_offset(&self) -> u32 {
-        self.canvas_info_offset
+        self.offsets[1]
+    }
+
+    pub fn section_offsets(&self) -> &[u32; OFFSET_COUNT] {
+        &self.offsets
+    }
+
+    pub fn section_offset(&self, index: usize) -> Option<u32> {
+        self.offsets.get(index).copied()
     }
 }
 
@@ -57,7 +70,19 @@ fn read_u32(bytes: &[u8], offset: usize, endianness: Endianness) -> u32 {
     }
 }
 
-fn validate_offset(bytes: &[u8], offset: u32, name: &'static str) -> Result<()> {
+fn validate_required_offset(bytes: &[u8], offset: u32, name: &'static str) -> Result<()> {
+    validate_offset(bytes, offset, name)
+}
+
+fn validate_optional_offset(bytes: &[u8], offset: u32, index: usize) -> Result<()> {
+    if offset == 0 {
+        return Ok(());
+    }
+
+    validate_offset(bytes, offset, format!("section {index}"))
+}
+
+fn validate_offset(bytes: &[u8], offset: u32, name: impl std::fmt::Display) -> Result<()> {
     let offset = usize::try_from(offset)
         .map_err(|_| invalid_offsets(format!("{name} offset does not fit in platform usize")))?;
 
@@ -65,9 +90,9 @@ fn validate_offset(bytes: &[u8], offset: u32, name: &'static str) -> Result<()> 
         return Err(invalid_offsets(format!("{name} offset is outside file")));
     }
 
-    if offset < CONFIRMED_TABLE_END {
+    if offset < OFFSET_TABLE_END {
         return Err(invalid_offsets(format!(
-            "{name} offset points into the header or confirmed offset table"
+            "{name} offset points into the header or offset table"
         )));
     }
 

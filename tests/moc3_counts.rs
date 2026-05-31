@@ -19,18 +19,22 @@ fn parses_basic_moc3_count_info() {
 
 #[test]
 fn rejects_incomplete_moc3_count_info() {
-    let bytes = moc3_with_count_fixture(&[15, 49], 0x90, 0x88);
+    let bytes = moc3_with_count_fixture(&[15, 49], 0x890, 0x880, 0x840);
     let error = Moc3CountInfo::parse(&bytes).unwrap_err();
 
     assert!(matches!(error, Error::InvalidMoc3 { .. }));
 }
 
 fn moc3_with_counts(counts: &[u32]) -> Vec<u8> {
-    moc3_with_count_fixture(counts, 0x140, 0x100)
+    moc3_with_count_fixture(counts, 0x880, 0x7c0, 0x840)
 }
 
-fn moc3_with_count_fixture(counts: &[u32], len: usize, canvas_offset: u32) -> Vec<u8> {
-    let count_offset = 0x80_u32;
+fn moc3_with_count_fixture(
+    counts: &[u32],
+    len: usize,
+    count_offset: u32,
+    canvas_offset: u32,
+) -> Vec<u8> {
     let mut bytes = vec![0; len];
     bytes[0..4].copy_from_slice(b"MOC3");
     bytes[4] = 1;

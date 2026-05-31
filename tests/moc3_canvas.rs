@@ -16,15 +16,15 @@ fn parses_moc3_canvas_info() {
 
 #[test]
 fn rejects_incomplete_moc3_canvas_info() {
-    let bytes = moc3_with_offsets(0x80, 0x100, 0x120);
+    let bytes = moc3_with_offsets(0x7c0, 0x860, 0x880);
     let error = Moc3CanvasInfo::parse(&bytes).unwrap_err();
 
     assert!(matches!(error, Error::InvalidMoc3 { .. }));
 }
 
 fn moc3_with_canvas_info(values: [f32; 5], flags: u8) -> Vec<u8> {
-    let mut bytes = moc3_with_offsets(0x80, 0x100, 0x180);
-    let mut cursor = 0x100;
+    let mut bytes = moc3_with_offsets(0x7c0, 0x840, 0x880);
+    let mut cursor = 0x840;
 
     for value in values {
         bytes[cursor..cursor + 4].copy_from_slice(&value.to_le_bytes());
