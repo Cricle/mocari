@@ -322,6 +322,22 @@ fn builds_clipping_plan_from_masked_drawables() {
 }
 
 #[test]
+fn merges_clipping_contexts_with_same_mask_set_regardless_of_order() {
+    let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let meshes = [
+        test_mesh_with_masks(0, 0.0, vec![1, 2]),
+        test_mesh_with_masks(0, 1.0, vec![2, 1]),
+    ];
+    let buffers = WgpuMeshBuffers::from_drawables(&device, &meshes).unwrap();
+
+    let plan = WgpuClippingPlan::from_mesh_buffers(&buffers);
+
+    assert_eq!(plan.contexts().len(), 1);
+    assert_eq!(plan.contexts()[0].masks(), &[1, 2]);
+    assert_eq!(plan.contexts()[0].drawable_indices(), &[0, 1]);
+}
+
+#[test]
 fn creates_rgba8_texture_with_bind_group() {
     let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
     let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);

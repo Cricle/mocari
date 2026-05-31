@@ -219,7 +219,7 @@ impl WgpuClippingPlan {
 
             if let Some(context) = contexts
                 .iter_mut()
-                .find(|context| context.masks == drawable.masks())
+                .find(|context| same_mask_set(&context.masks, drawable.masks()))
             {
                 context.drawable_indices.push(drawable_index);
             } else {
@@ -243,6 +243,19 @@ impl WgpuClippingPlan {
     pub fn unmasked_drawable_indices(&self) -> &[usize] {
         &self.unmasked_drawable_indices
     }
+}
+
+fn same_mask_set(left: &[i32], right: &[i32]) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+
+    let mut sorted_left = left.to_vec();
+    let mut sorted_right = right.to_vec();
+    sorted_left.sort_unstable();
+    sorted_right.sort_unstable();
+
+    sorted_left == sorted_right
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
