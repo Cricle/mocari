@@ -1,3 +1,4 @@
+mod blend;
 mod deformers;
 mod ids;
 mod interpolation;
@@ -6,6 +7,9 @@ mod math;
 mod parameters;
 mod physics;
 
+pub use blend::{
+    BlendSlot, Rgb, blend_scalar_slots, blend_scalar_slots_clamped, multiply_rgb, screen_rgb,
+};
 pub use deformers::{
     WarpInterpolation, rotation_deformer_transform_point, warp_deformer_transform_inside,
 };
