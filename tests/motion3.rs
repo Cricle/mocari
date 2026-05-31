@@ -84,6 +84,60 @@ fn samples_stepped_motion_segment() {
 }
 
 #[test]
+fn samples_restricted_bezier_motion_segment() {
+    let curve = Motion3::from_json_str(
+        r#"{
+            "Version": 3,
+            "Meta": {
+                "Duration": 1.0,
+                "Fps": 30.0,
+                "Loop": false,
+                "AreBeziersRestricted": true
+            },
+            "Curves": [
+                {
+                    "Target": "Parameter",
+                    "Id": "ParamAngleX",
+                    "Segments": [0.0, 0.0, 1, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+                }
+            ]
+        }"#,
+    )
+    .unwrap()
+    .curves()[0]
+        .clone();
+
+    assert_close(curve.sample(0.5).unwrap(), 0.5);
+}
+
+#[test]
+fn samples_unrestricted_bezier_motion_segment_by_solving_time() {
+    let curve = Motion3::from_json_str(
+        r#"{
+            "Version": 3,
+            "Meta": {
+                "Duration": 1.0,
+                "Fps": 30.0,
+                "Loop": false,
+                "AreBeziersRestricted": false
+            },
+            "Curves": [
+                {
+                    "Target": "Parameter",
+                    "Id": "ParamAngleX",
+                    "Segments": [0.0, 0.0, 1, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+                }
+            ]
+        }"#,
+    )
+    .unwrap()
+    .curves()[0]
+        .clone();
+
+    assert_close(curve.sample(0.5).unwrap(), 0.889_881_6);
+}
+
+#[test]
 fn rejects_unsupported_motion3_version() {
     let error = Motion3::from_json_str(
         r#"{
@@ -101,4 +155,11 @@ fn rejects_unsupported_motion3_version() {
             version: 2
         }
     ));
+}
+
+fn assert_close(actual: f32, expected: f32) {
+    assert!(
+        (actual - expected).abs() < 0.0001,
+        "actual {actual}, expected {expected}"
+    );
 }

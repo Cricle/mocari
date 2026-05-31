@@ -26,10 +26,11 @@ impl Motion3 {
             });
         }
 
+        let are_beziers_restricted = raw.meta.are_beziers_restricted;
         let curves = raw
             .curves
             .into_iter()
-            .map(MotionCurve::try_from)
+            .map(|curve| MotionCurve::from_raw(curve, are_beziers_restricted))
             .collect::<Result<Vec<_>>>()?;
 
         Ok(Self {
@@ -120,6 +121,7 @@ pub struct MotionCurve {
     segments: Vec<MotionSegment>,
     fade_in_time: Option<f32>,
     fade_out_time: Option<f32>,
+    are_beziers_restricted: bool,
 }
 
 impl MotionCurve {
@@ -154,7 +156,7 @@ impl MotionCurve {
 
         for segment in &self.segments {
             if time <= segment.end().time {
-                return segment.sample(time);
+                return segment.sample(time, self.are_beziers_restricted);
             }
         }
 
@@ -165,10 +167,8 @@ impl MotionCurve {
     }
 }
 
-impl TryFrom<RawMotionCurve> for MotionCurve {
-    type Error = Error;
-
-    fn try_from(raw: RawMotionCurve) -> Result<Self> {
+impl MotionCurve {
+    fn from_raw(raw: RawMotionCurve, are_beziers_restricted: bool) -> Result<Self> {
         let (first_point, segments) = parse_segments(&raw.segments)?;
 
         Ok(Self {
@@ -178,6 +178,7 @@ impl TryFrom<RawMotionCurve> for MotionCurve {
             segments,
             fade_in_time: raw.fade_in_time,
             fade_out_time: raw.fade_out_time,
+            are_beziers_restricted,
         })
     }
 }
@@ -220,7 +221,7 @@ impl MotionSegment {
         }
     }
 
-    pub fn sample(&self, time: f32) -> Option<f32> {
+    pub fn sample(&self, time: f32, are_beziers_restricted: bool) -> Option<f32> {
         match *self {
             Self::Linear { start, end } => Some(sample_linear(start, end, time)),
             Self::Stepped { start, end } => {
@@ -237,7 +238,19 @@ impl MotionSegment {
                     Some(end.value)
                 }
             }
-            Self::Bezier { .. } => None,
+            Self::Bezier {
+                start,
+                control1,
+                control2,
+                end,
+            } => Some(sample_bezier(
+                start,
+                control1,
+                control2,
+                end,
+                time,
+                are_beziers_restricted,
+            )),
         }
     }
 }
@@ -347,6 +360,135 @@ fn sample_linear(start: MotionPoint, end: MotionPoint, time: f32) -> f32 {
 
     let amount = ((time - start.time) / (end.time - start.time)).clamp(0.0, 1.0);
     start.value + (end.value - start.value) * amount
+}
+
+fn sample_bezier(
+    start: MotionPoint,
+    control1: MotionPoint,
+    control2: MotionPoint,
+    end: MotionPoint,
+    time: f32,
+    are_beziers_restricted: bool,
+) -> f32 {
+    let t = if are_beziers_restricted {
+        if start.time == end.time {
+            1.0
+        } else {
+            ((time - start.time) / (end.time - start.time)).max(0.0)
+        }
+    } else {
+        solve_bezier_time(start, control1, control2, end, time)
+    };
+
+    cubic_bezier_point(start, control1, control2, end, t).value
+}
+
+fn cubic_bezier_point(
+    start: MotionPoint,
+    control1: MotionPoint,
+    control2: MotionPoint,
+    end: MotionPoint,
+    t: f32,
+) -> MotionPoint {
+    let p01 = lerp_point(start, control1, t);
+    let p12 = lerp_point(control1, control2, t);
+    let p23 = lerp_point(control2, end, t);
+    let p012 = lerp_point(p01, p12, t);
+    let p123 = lerp_point(p12, p23, t);
+    lerp_point(p012, p123, t)
+}
+
+fn lerp_point(a: MotionPoint, b: MotionPoint, t: f32) -> MotionPoint {
+    MotionPoint {
+        time: a.time + (b.time - a.time) * t,
+        value: a.value + (b.value - a.value) * t,
+    }
+}
+
+fn solve_bezier_time(
+    start: MotionPoint,
+    control1: MotionPoint,
+    control2: MotionPoint,
+    end: MotionPoint,
+    time: f32,
+) -> f32 {
+    let a = end.time - 3.0 * control2.time + 3.0 * control1.time - start.time;
+    let b = 3.0 * control2.time - 6.0 * control1.time + 3.0 * start.time;
+    let c = 3.0 * control1.time - 3.0 * start.time;
+    let d = start.time - time;
+    cardano_algorithm_for_bezier(a, b, c, d)
+}
+
+fn cardano_algorithm_for_bezier(a: f32, b: f32, c: f32, d: f32) -> f32 {
+    const EPSILON: f32 = 0.00001;
+    const CENTER: f32 = 0.5;
+    const THRESHOLD: f32 = CENTER + 0.01;
+
+    if a.abs() < EPSILON {
+        return quadratic_equation(b, c, d).clamp(0.0, 1.0);
+    }
+
+    let ba = b / a;
+    let ca = c / a;
+    let da = d / a;
+    let p = (3.0 * ca - ba * ba) / 3.0;
+    let p3 = p / 3.0;
+    let q = (2.0 * ba * ba * ba - 9.0 * ba * ca + 27.0 * da) / 27.0;
+    let q2 = q / 2.0;
+    let discriminant = q2 * q2 + p3 * p3 * p3;
+
+    if discriminant < 0.0 {
+        let mp3 = -p / 3.0;
+        let mp33 = mp3 * mp3 * mp3;
+        let r = mp33.sqrt();
+        let t = -q / (2.0 * r);
+        let cos_phi = t.clamp(-1.0, 1.0);
+        let phi = cos_phi.acos();
+        let crtr = r.cbrt();
+        let t1 = 2.0 * crtr;
+
+        let root1 = t1 * (phi / 3.0).cos() - ba / 3.0;
+        if (root1 - CENTER).abs() < THRESHOLD {
+            return root1.clamp(0.0, 1.0);
+        }
+
+        let root2 = t1 * ((phi + 2.0 * std::f32::consts::PI) / 3.0).cos() - ba / 3.0;
+        if (root2 - CENTER).abs() < THRESHOLD {
+            return root2.clamp(0.0, 1.0);
+        }
+
+        let root3 = t1 * ((phi + 4.0 * std::f32::consts::PI) / 3.0).cos() - ba / 3.0;
+        return root3.clamp(0.0, 1.0);
+    }
+
+    if discriminant == 0.0 {
+        let u1 = if q2 < 0.0 { (-q2).cbrt() } else { -q2.cbrt() };
+        let root1 = 2.0 * u1 - ba / 3.0;
+        if (root1 - CENTER).abs() < THRESHOLD {
+            return root1.clamp(0.0, 1.0);
+        }
+
+        let root2 = -u1 - ba / 3.0;
+        return root2.clamp(0.0, 1.0);
+    }
+
+    let sd = discriminant.sqrt();
+    let u1 = (sd - q2).cbrt();
+    let v1 = (sd + q2).cbrt();
+    (u1 - v1 - ba / 3.0).clamp(0.0, 1.0)
+}
+
+fn quadratic_equation(a: f32, b: f32, c: f32) -> f32 {
+    const EPSILON: f32 = 0.00001;
+
+    if a.abs() < EPSILON {
+        if b.abs() < EPSILON {
+            return -c;
+        }
+        return -c / b;
+    }
+
+    -(b + (b * b - 4.0 * a * c).sqrt()) / (2.0 * a)
 }
 
 fn invalid_segments(message: impl Into<String>) -> Error {
