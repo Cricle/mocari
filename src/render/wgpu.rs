@@ -762,6 +762,22 @@ impl WgpuMaskParams {
 }
 
 #[derive(Debug)]
+pub struct WgpuClipParams {
+    buffer: wgpu::Buffer,
+    bind_group: wgpu::BindGroup,
+}
+
+impl WgpuClipParams {
+    pub fn buffer(&self) -> &wgpu::Buffer {
+        &self.buffer
+    }
+
+    pub fn bind_group(&self) -> &wgpu::BindGroup {
+        &self.bind_group
+    }
+}
+
+#[derive(Debug)]
 pub struct WgpuPreparedClippingContext {
     mask_drawable_indices: Vec<usize>,
     mask_transform: WgpuTransform,
@@ -802,6 +818,7 @@ pub struct WgpuLive2dRenderer {
     texture_bind_group_layout: wgpu::BindGroupLayout,
     transform_bind_group_layout: wgpu::BindGroupLayout,
     mask_params_bind_group_layout: wgpu::BindGroupLayout,
+    clip_params_bind_group_layout: wgpu::BindGroupLayout,
     identity_transform: WgpuTransform,
     sampler: wgpu::Sampler,
 }
@@ -854,6 +871,20 @@ impl WgpuLive2dRenderer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
                         min_binding_size: wgpu::BufferSize::new(32),
+                    },
+                    count: None,
+                }],
+            });
+        let clip_params_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("live2d.clip.params.bind_group_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(80),
                     },
                     count: None,
                 }],
@@ -936,6 +967,7 @@ impl WgpuLive2dRenderer {
             texture_bind_group_layout,
             transform_bind_group_layout,
             mask_params_bind_group_layout,
+            clip_params_bind_group_layout,
             identity_transform,
             sampler,
         }
@@ -970,6 +1002,10 @@ impl WgpuLive2dRenderer {
 
     pub fn mask_params_bind_group_layout(&self) -> &wgpu::BindGroupLayout {
         &self.mask_params_bind_group_layout
+    }
+
+    pub fn clip_params_bind_group_layout(&self) -> &wgpu::BindGroupLayout {
+        &self.clip_params_bind_group_layout
     }
 
     pub fn identity_transform(&self) -> &WgpuTransform {
@@ -1011,6 +1047,15 @@ impl WgpuLive2dRenderer {
         layout: WgpuClippingLayout,
     ) -> WgpuMaskParams {
         create_wgpu_mask_params(device, &self.mask_params_bind_group_layout, layout)
+    }
+
+    pub fn create_clip_params(
+        &self,
+        device: &wgpu::Device,
+        matrix: &Matrix44,
+        channel: WgpuMaskChannel,
+    ) -> WgpuClipParams {
+        create_wgpu_clip_params(device, &self.clip_params_bind_group_layout, matrix, channel)
     }
 
     pub fn create_clipping_resources(
@@ -1353,6 +1398,15 @@ pub fn encode_wgpu_mask_params(layout: WgpuClippingLayout) -> Vec<u8> {
     bytes
 }
 
+pub fn encode_wgpu_clip_params(matrix: &Matrix44, channel: WgpuMaskChannel) -> Vec<u8> {
+    let mut bytes = encode_wgpu_matrix(matrix);
+    for value in channel.flag() {
+        bytes.extend_from_slice(&value.to_ne_bytes());
+    }
+
+    bytes
+}
+
 pub fn create_wgpu_drawable_buffers(
     device: &wgpu::Device,
     mesh: &Moc3DrawableMesh,
@@ -1430,6 +1484,30 @@ fn create_wgpu_mask_params(
     });
 
     WgpuMaskParams { buffer, bind_group }
+}
+
+fn create_wgpu_clip_params(
+    device: &wgpu::Device,
+    bind_group_layout: &wgpu::BindGroupLayout,
+    matrix: &Matrix44,
+    channel: WgpuMaskChannel,
+) -> WgpuClipParams {
+    let bytes = encode_wgpu_clip_params(matrix, channel);
+    let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("live2d.clip.params.uniform"),
+        contents: &bytes,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+    });
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("live2d.clip.params.bind_group"),
+        layout: bind_group_layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: buffer.as_entire_binding(),
+        }],
+    });
+
+    WgpuClipParams { buffer, bind_group }
 }
 
 fn create_wgpu_transform(

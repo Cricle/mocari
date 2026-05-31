@@ -4,9 +4,9 @@ use rusty_live2d::{
     render::wgpu::{
         WgpuClippingLayoutError, WgpuClippingPlan, WgpuClippingRect, WgpuDrawableVertex,
         WgpuLive2dRenderer, WgpuMaskChannel, WgpuMeshBuffers, WgpuRenderError, WgpuTextureError,
-        encode_wgpu_indices, encode_wgpu_mask_params, encode_wgpu_matrix, encode_wgpu_vertices,
-        live2d_blend_state, live2d_masked_wgsl_source, live2d_wgsl_source, mask_wgsl_source,
-        wgpu_mask_blend_state, wgpu_vertices_from_drawable,
+        encode_wgpu_clip_params, encode_wgpu_indices, encode_wgpu_mask_params, encode_wgpu_matrix,
+        encode_wgpu_vertices, live2d_blend_state, live2d_masked_wgsl_source, live2d_wgsl_source,
+        mask_wgsl_source, wgpu_mask_blend_state, wgpu_vertices_from_drawable,
     },
 };
 
@@ -137,6 +137,37 @@ fn creates_mask_params_bind_group() {
     let _ = params.buffer();
     let _ = params.bind_group();
     let _ = renderer.mask_params_bind_group_layout();
+}
+
+#[test]
+fn encodes_clip_params_from_draw_matrix_and_channel() {
+    let mut matrix = Matrix44::identity();
+    matrix.scale(0.25, 0.5);
+    matrix.translate(0.75, 0.25);
+
+    let bytes = encode_wgpu_clip_params(&matrix, WgpuMaskChannel::Blue);
+
+    assert_eq!(bytes.len(), 80);
+    assert_eq!(&bytes[0..4], &0.25f32.to_ne_bytes());
+    assert_eq!(&bytes[20..24], &0.5f32.to_ne_bytes());
+    assert_eq!(&bytes[48..52], &0.75f32.to_ne_bytes());
+    assert_eq!(&bytes[52..56], &0.25f32.to_ne_bytes());
+    assert_eq!(&bytes[64..68], &0.0f32.to_ne_bytes());
+    assert_eq!(&bytes[68..72], &0.0f32.to_ne_bytes());
+    assert_eq!(&bytes[72..76], &1.0f32.to_ne_bytes());
+    assert_eq!(&bytes[76..80], &0.0f32.to_ne_bytes());
+}
+
+#[test]
+fn creates_clip_params_bind_group() {
+    let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+
+    let params = renderer.create_clip_params(&device, &Matrix44::identity(), WgpuMaskChannel::Red);
+
+    let _ = params.buffer();
+    let _ = params.bind_group();
+    let _ = renderer.clip_params_bind_group_layout();
 }
 
 #[test]
