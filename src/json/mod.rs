@@ -20,4 +20,7 @@ pub use physics3::{
     PhysicsNormalization, PhysicsNormalizationValue, PhysicsOutput, PhysicsSetting, PhysicsSource,
     PhysicsValueKind, PhysicsVertex, Vector2,
 };
-pub use pose3::{Pose3, PosePart};
+pub use pose3::{
+    DEFAULT_POSE_FADE_IN_TIME, Pose3, PosePart, copy_pose_link_opacities,
+    resolved_pose_fade_in_time, update_pose_group_opacities,
+};
