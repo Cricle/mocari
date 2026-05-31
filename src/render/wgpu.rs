@@ -186,6 +186,72 @@ impl std::fmt::Display for WgpuRenderError {
 
 impl std::error::Error for WgpuRenderError {}
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WgpuTextureError {
+    InvalidTextureSize {
+        width: u32,
+        height: u32,
+    },
+    InvalidRgbaLength {
+        width: u32,
+        height: u32,
+        expected: usize,
+        actual: usize,
+    },
+}
+
+impl std::fmt::Display for WgpuTextureError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidTextureSize { width, height } => {
+                write!(formatter, "invalid texture size {width}x{height}")
+            }
+            Self::InvalidRgbaLength {
+                width,
+                height,
+                expected,
+                actual,
+            } => write!(
+                formatter,
+                "invalid rgba8 texture length for {width}x{height}: expected {expected}, got {actual}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for WgpuTextureError {}
+
+#[derive(Debug)]
+pub struct WgpuTexture {
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    bind_group: wgpu::BindGroup,
+    width: u32,
+    height: u32,
+}
+
+impl WgpuTexture {
+    pub fn texture(&self) -> &wgpu::Texture {
+        &self.texture
+    }
+
+    pub fn view(&self) -> &wgpu::TextureView {
+        &self.view
+    }
+
+    pub fn bind_group(&self) -> &wgpu::BindGroup {
+        &self.bind_group
+    }
+
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+}
+
 #[derive(Debug)]
 pub struct WgpuLive2dRenderer {
     pipeline: wgpu::RenderPipeline,
@@ -308,6 +374,62 @@ impl WgpuLive2dRenderer {
         })
     }
 
+    pub fn create_rgba8_texture(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+    ) -> Result<WgpuTexture, WgpuTextureError> {
+        let expected = rgba8_len(width, height)?;
+        if rgba.len() != expected {
+            return Err(WgpuTextureError::InvalidRgbaLength {
+                width,
+                height,
+                expected,
+                actual: rgba.len(),
+            });
+        }
+
+        let size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("live2d.texture.rgba8"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            texture.as_image_copy(),
+            rgba,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(width * 4),
+                rows_per_image: Some(height),
+            },
+            size,
+        );
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let bind_group = self.create_texture_bind_group(device, &view);
+
+        Ok(WgpuTexture {
+            texture,
+            view,
+            bind_group,
+            width,
+            height,
+        })
+    }
+
     pub fn draw(
         &self,
         render_pass: &mut wgpu::RenderPass<'_>,
@@ -407,4 +529,22 @@ pub fn create_wgpu_drawable_buffers(
         opacity: mesh.opacity(),
         draw_order: mesh.draw_order(),
     })
+}
+
+fn rgba8_len(width: u32, height: u32) -> Result<usize, WgpuTextureError> {
+    if width == 0 || height == 0 {
+        return Err(WgpuTextureError::InvalidTextureSize { width, height });
+    }
+
+    let len = usize::try_from(width)
+        .ok()
+        .and_then(|width| {
+            usize::try_from(height)
+                .ok()
+                .and_then(|height| width.checked_mul(height))
+        })
+        .and_then(|pixels| pixels.checked_mul(4))
+        .ok_or(WgpuTextureError::InvalidTextureSize { width, height })?;
+
+    Ok(len)
 }

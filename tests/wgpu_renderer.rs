@@ -1,7 +1,7 @@
 use rusty_live2d::{
     moc3::{Moc3DrawableMesh, Moc3DrawableVertex},
     render::wgpu::{
-        WgpuDrawableVertex, WgpuLive2dRenderer, WgpuMeshBuffers, WgpuRenderError,
+        WgpuDrawableVertex, WgpuLive2dRenderer, WgpuMeshBuffers, WgpuRenderError, WgpuTextureError,
         encode_wgpu_indices, encode_wgpu_vertices, live2d_wgsl_source, wgpu_vertices_from_drawable,
     },
 };
@@ -191,6 +191,50 @@ fn draw_returns_error_for_missing_texture_bind_group() {
     };
 
     assert_eq!(error, WgpuRenderError::MissingTexture { texture_index: 2 });
+}
+
+#[test]
+fn creates_rgba8_texture_with_bind_group() {
+    let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+
+    let texture = renderer
+        .create_rgba8_texture(
+            &device,
+            &queue,
+            2,
+            2,
+            &[
+                255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255,
+            ],
+        )
+        .unwrap();
+
+    assert_eq!(texture.width(), 2);
+    assert_eq!(texture.height(), 2);
+    let _ = texture.texture();
+    let _ = texture.view();
+    let _ = texture.bind_group();
+}
+
+#[test]
+fn rejects_rgba8_texture_with_wrong_byte_len() {
+    let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+
+    let error = renderer
+        .create_rgba8_texture(&device, &queue, 2, 2, &[0; 15])
+        .unwrap_err();
+
+    assert_eq!(
+        error,
+        WgpuTextureError::InvalidRgbaLength {
+            width: 2,
+            height: 2,
+            expected: 16,
+            actual: 15
+        }
+    );
 }
 
 fn test_mesh_with_draw_order(texture_index: u8, draw_order: f32) -> Moc3DrawableMesh {
