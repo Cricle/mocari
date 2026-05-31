@@ -97,6 +97,30 @@ pub struct Moc3ArtMeshes {
 }
 
 impl Moc3ArtMeshes {
+    pub fn from_parts(
+        meshes: Vec<Moc3ArtMeshInfo>,
+        uv_xys: Vec<f32>,
+        position_indices: Vec<i16>,
+        drawable_masks: Vec<i32>,
+    ) -> Result<Self> {
+        for (index, mesh) in meshes.iter().copied().enumerate() {
+            validate_mesh_ranges(
+                index,
+                mesh,
+                uv_xys.len(),
+                position_indices.len(),
+                drawable_masks.len(),
+            )?;
+        }
+
+        Ok(Self {
+            meshes,
+            uv_xys,
+            position_indices,
+            drawable_masks,
+        })
+    }
+
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let header = Moc3Header::parse(bytes)?;
         let offsets = Moc3SectionOffsets::parse(bytes)?;
@@ -177,7 +201,7 @@ impl Moc3ArtMeshes {
 
         let mut meshes = Vec::with_capacity(art_mesh_count);
         for index in 0..art_mesh_count {
-            let mesh = Moc3ArtMeshInfo::new(
+            meshes.push(Moc3ArtMeshInfo::new(
                 texture_indices[index],
                 drawable_flags[index],
                 position_index_counts[index],
@@ -186,23 +210,10 @@ impl Moc3ArtMeshes {
                 vertex_counts[index],
                 mask_begin_indices[index],
                 mask_counts[index],
-            );
-            validate_mesh_ranges(
-                index,
-                mesh,
-                uv_xys.len(),
-                position_indices.len(),
-                drawable_masks.len(),
-            )?;
-            meshes.push(mesh);
+            ));
         }
 
-        Ok(Self {
-            meshes,
-            uv_xys,
-            position_indices,
-            drawable_masks,
-        })
+        Self::from_parts(meshes, uv_xys, position_indices, drawable_masks)
     }
 
     pub fn meshes(&self) -> &[Moc3ArtMeshInfo] {
@@ -282,6 +293,41 @@ pub struct Moc3ArtMeshKeyforms {
 }
 
 impl Moc3ArtMeshKeyforms {
+    pub fn from_parts(
+        keyform_begin_indices: Vec<i32>,
+        keyform_counts: Vec<i32>,
+        vertex_counts: Vec<i32>,
+        keyforms: Vec<Moc3ArtMeshKeyformInfo>,
+        position_xys: Vec<f32>,
+    ) -> Result<Self> {
+        if keyform_begin_indices.len() != keyform_counts.len()
+            || keyform_begin_indices.len() != vertex_counts.len()
+        {
+            return Err(invalid_art_meshes(
+                "art mesh keyform metadata lengths do not match",
+            ));
+        }
+
+        for mesh_index in 0..keyform_begin_indices.len() {
+            validate_keyform_ranges(
+                mesh_index,
+                keyform_begin_indices[mesh_index],
+                keyform_counts[mesh_index],
+                vertex_counts[mesh_index],
+                &keyforms,
+                position_xys.len(),
+            )?;
+        }
+
+        Ok(Self {
+            keyform_begin_indices,
+            keyform_counts,
+            vertex_counts,
+            keyforms,
+            position_xys,
+        })
+    }
+
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let header = Moc3Header::parse(bytes)?;
         let offsets = Moc3SectionOffsets::parse(bytes)?;
@@ -349,24 +395,13 @@ impl Moc3ArtMeshKeyforms {
             })
             .collect::<Vec<_>>();
 
-        for mesh_index in 0..art_mesh_count {
-            validate_keyform_ranges(
-                mesh_index,
-                keyform_begin_indices[mesh_index],
-                keyform_counts[mesh_index],
-                vertex_counts[mesh_index],
-                &keyforms,
-                position_xys.len(),
-            )?;
-        }
-
-        Ok(Self {
+        Self::from_parts(
             keyform_begin_indices,
             keyform_counts,
             vertex_counts,
             keyforms,
             position_xys,
-        })
+        )
     }
 
     pub fn keyforms(&self) -> &[Moc3ArtMeshKeyformInfo] {
@@ -396,6 +431,109 @@ impl Moc3ArtMeshKeyforms {
         let len = usize::try_from(vertex_count).ok()?.checked_mul(2)?;
         self.position_xys.get(start..start.checked_add(len)?)
     }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct Moc3DrawableVertex {
+    position: [f32; 2],
+    uv: [f32; 2],
+}
+
+impl Moc3DrawableVertex {
+    pub fn new(position: [f32; 2], uv: [f32; 2]) -> Self {
+        Self { position, uv }
+    }
+
+    pub fn position(&self) -> [f32; 2] {
+        self.position
+    }
+
+    pub fn uv(&self) -> [f32; 2] {
+        self.uv
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Moc3DrawableMesh {
+    texture_index: i32,
+    drawable_flags: u8,
+    opacity: f32,
+    draw_order: f32,
+    vertices: Vec<Moc3DrawableVertex>,
+    indices: Vec<u16>,
+    masks: Vec<i32>,
+}
+
+impl Moc3DrawableMesh {
+    pub fn texture_index(&self) -> i32 {
+        self.texture_index
+    }
+
+    pub fn drawable_flags(&self) -> u8 {
+        self.drawable_flags
+    }
+
+    pub fn opacity(&self) -> f32 {
+        self.opacity
+    }
+
+    pub fn draw_order(&self) -> f32 {
+        self.draw_order
+    }
+
+    pub fn vertices(&self) -> &[Moc3DrawableVertex] {
+        &self.vertices
+    }
+
+    pub fn indices(&self) -> &[u16] {
+        &self.indices
+    }
+
+    pub fn masks(&self) -> &[i32] {
+        &self.masks
+    }
+}
+
+pub fn build_moc3_drawable_mesh(
+    art_meshes: &Moc3ArtMeshes,
+    keyforms: &Moc3ArtMeshKeyforms,
+    art_mesh_index: usize,
+    local_keyform_index: usize,
+) -> Option<Moc3DrawableMesh> {
+    let mesh = *art_meshes.meshes().get(art_mesh_index)?;
+    let keyform = *keyforms
+        .art_mesh_keyforms(art_mesh_index)?
+        .get(local_keyform_index)?;
+    let positions = keyforms.art_mesh_keyform_positions(art_mesh_index, local_keyform_index)?;
+    let uvs = art_meshes.art_mesh_uvs(art_mesh_index)?;
+    if positions.len() != uvs.len() || positions.len() % 2 != 0 {
+        return None;
+    }
+
+    let vertices = positions
+        .chunks_exact(2)
+        .zip(uvs.chunks_exact(2))
+        .map(|(position, uv)| Moc3DrawableVertex::new([position[0], position[1]], [uv[0], uv[1]]))
+        .collect::<Vec<_>>();
+
+    let mut indices = Vec::with_capacity(mesh.position_index_count as usize);
+    for position_index in art_meshes.art_mesh_position_indices(art_mesh_index)? {
+        let position_index = u16::try_from(*position_index).ok()?;
+        if usize::from(position_index) >= vertices.len() {
+            return None;
+        }
+        indices.push(position_index);
+    }
+
+    Some(Moc3DrawableMesh {
+        texture_index: mesh.texture_index,
+        drawable_flags: mesh.drawable_flags,
+        opacity: keyform.opacity,
+        draw_order: keyform.draw_order,
+        vertices,
+        indices,
+        masks: art_meshes.art_mesh_masks(art_mesh_index)?.to_vec(),
+    })
 }
 
 fn read_i32_section(

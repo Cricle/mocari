@@ -6,7 +6,7 @@ use rusty_live2d::{
     json::{Cdi3, Model3, Motion3, Physics3},
     moc3::{
         Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3CanvasInfo, Moc3CountInfo, Moc3Header, Moc3Ids,
-        Moc3SectionOffsets,
+        Moc3SectionOffsets, build_moc3_drawable_mesh,
     },
 };
 use zip::ZipArchive;
@@ -74,6 +74,7 @@ fn parses_runtime_assets_from_opt_in_sample_zip() {
     );
     assert!(!art_mesh_keyforms.position_xys().is_empty());
     assert!(art_mesh_keyforms.art_mesh_keyform_positions(0, 0).is_some());
+    assert!(build_moc3_drawable_mesh(&art_meshes, &art_mesh_keyforms, 0, 0).is_some());
 
     let canvas = Moc3CanvasInfo::parse(&moc3).unwrap();
     assert!(canvas.width() > 0.0);
