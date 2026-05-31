@@ -7,6 +7,9 @@ pub enum Error {
         format: &'static str,
         message: String,
     },
+    InvalidMoc3 {
+        message: String,
+    },
     UnsupportedVersion {
         format: &'static str,
         version: u32,
@@ -22,6 +25,7 @@ impl fmt::Display for Error {
             Self::InvalidJson { format, message } => {
                 write!(formatter, "invalid {format}: {message}")
             }
+            Self::InvalidMoc3 { message } => write!(formatter, "invalid moc3: {message}"),
             Self::UnsupportedVersion { format, version } => {
                 write!(formatter, "unsupported {format} version {version}")
             }
