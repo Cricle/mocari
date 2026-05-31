@@ -5,7 +5,7 @@ use rusty_live2d::{
         WgpuClippingLayoutError, WgpuClippingPlan, WgpuClippingRect, WgpuDrawableVertex,
         WgpuLive2dRenderer, WgpuMaskChannel, WgpuMeshBuffers, WgpuRenderError, WgpuTextureError,
         encode_wgpu_indices, encode_wgpu_matrix, encode_wgpu_vertices, live2d_blend_state,
-        live2d_wgsl_source, wgpu_vertices_from_drawable,
+        live2d_wgsl_source, mask_wgsl_source, wgpu_vertices_from_drawable,
     },
 };
 
@@ -56,6 +56,20 @@ fn live2d_wgsl_samples_texture_and_applies_opacity() {
     assert!(source.contains("textureSample"));
     assert!(source.contains("let alpha = sample.a * input.opacity"));
     assert!(source.contains("vec4<f32>(sample.rgb * alpha, alpha)"));
+}
+
+#[test]
+fn mask_wgsl_uses_external_file_and_channel_params() {
+    let source = mask_wgsl_source();
+    let shader_file = std::fs::read_to_string("src/render/shaders/mask.wgsl").unwrap();
+
+    assert_eq!(source, shader_file);
+    assert!(source.contains("@group(2) @binding(0)"));
+    assert!(source.contains("channel_flag: vec4<f32>"));
+    assert!(source.contains("base_rect: vec4<f32>"));
+    assert!(source.contains("step(mask_params.base_rect.x, pos.x)"));
+    assert!(source.contains("textureSample(live2d_texture, live2d_sampler, input.uv).a"));
+    assert!(source.contains("return mask_params.channel_flag * source_alpha"));
 }
 
 #[test]
