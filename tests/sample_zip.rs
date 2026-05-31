@@ -89,8 +89,8 @@ fn parses_runtime_assets_from_opt_in_sample_zip() {
 }
 
 fn open_sample_archive() -> Option<ZipArchive<File>> {
-    let Some(zip_path) = env::var_os("LIVE2D_SAMPLE_ZIP") else {
-        eprintln!("skipping sample zip test; LIVE2D_SAMPLE_ZIP is not set");
+    let Some(zip_path) = env::var_os("MODEL_FIXTURE_ARCHIVE") else {
+        eprintln!("skipping sample zip test; MODEL_FIXTURE_ARCHIVE is not set");
         return None;
     };
 
