@@ -334,6 +334,7 @@ pub enum WgpuClippingLayoutError {
     MissingDrawableBounds { drawable_index: usize },
     MissingLayout { context_index: usize },
     MissingMaskMatrix { context_index: usize },
+    MissingDrawMatrix { context_index: usize },
     InvalidMaskDrawableIndex { drawable_index: i32 },
     DegenerateClippedBounds { context_index: usize },
 }
@@ -357,6 +358,10 @@ impl std::fmt::Display for WgpuClippingLayoutError {
             Self::MissingMaskMatrix { context_index } => write!(
                 formatter,
                 "clipping context {context_index} has no mask matrix"
+            ),
+            Self::MissingDrawMatrix { context_index } => write!(
+                formatter,
+                "clipping context {context_index} has no draw matrix"
             ),
             Self::InvalidMaskDrawableIndex { drawable_index } => {
                 write!(formatter, "invalid mask drawable index {drawable_index}")
@@ -601,6 +606,9 @@ pub enum WgpuRenderError {
     MissingDrawable {
         drawable_index: usize,
     },
+    MissingClippingContext {
+        drawable_index: usize,
+    },
     UnsupportedClippingMasks {
         drawable_index: usize,
         mask_count: usize,
@@ -619,6 +627,10 @@ impl std::fmt::Display for WgpuRenderError {
             Self::MissingDrawable { drawable_index } => {
                 write!(formatter, "missing drawable {drawable_index}")
             }
+            Self::MissingClippingContext { drawable_index } => write!(
+                formatter,
+                "drawable {drawable_index} has clipping masks but no prepared clipping context"
+            ),
             Self::UnsupportedClippingMasks {
                 drawable_index,
                 mask_count,
@@ -780,13 +792,19 @@ impl WgpuClipParams {
 #[derive(Debug)]
 pub struct WgpuPreparedClippingContext {
     mask_drawable_indices: Vec<usize>,
+    drawable_indices: Vec<usize>,
     mask_transform: WgpuTransform,
     mask_params: WgpuMaskParams,
+    clip_params: WgpuClipParams,
 }
 
 impl WgpuPreparedClippingContext {
     pub fn mask_drawable_indices(&self) -> &[usize] {
         &self.mask_drawable_indices
+    }
+
+    pub fn drawable_indices(&self) -> &[usize] {
+        &self.drawable_indices
     }
 
     pub fn mask_transform(&self) -> &WgpuTransform {
@@ -795,6 +813,10 @@ impl WgpuPreparedClippingContext {
 
     pub fn mask_params(&self) -> &WgpuMaskParams {
         &self.mask_params
+    }
+
+    pub fn clip_params(&self) -> &WgpuClipParams {
+        &self.clip_params
     }
 }
 
@@ -806,6 +828,15 @@ pub struct WgpuClippingResources {
 impl WgpuClippingResources {
     pub fn contexts(&self) -> &[WgpuPreparedClippingContext] {
         &self.contexts
+    }
+
+    pub fn context_for_drawable(
+        &self,
+        drawable_index: usize,
+    ) -> Option<&WgpuPreparedClippingContext> {
+        self.contexts
+            .iter()
+            .find(|context| context.drawable_indices.contains(&drawable_index))
     }
 }
 
@@ -1132,6 +1163,13 @@ impl WgpuLive2dRenderer {
                     .matrix_for_mask()
                     .ok_or(WgpuClippingLayoutError::MissingMaskMatrix { context_index })?,
             );
+            let clip_params = self.create_clip_params(
+                device,
+                &context
+                    .matrix_for_draw()
+                    .ok_or(WgpuClippingLayoutError::MissingDrawMatrix { context_index })?,
+                layout.channel(),
+            );
             let mask_params = self.create_mask_params(device, layout);
             let mask_drawable_indices = context
                 .masks()
@@ -1145,8 +1183,10 @@ impl WgpuLive2dRenderer {
 
             contexts.push(WgpuPreparedClippingContext {
                 mask_drawable_indices,
+                drawable_indices: context.drawable_indices().to_vec(),
                 mask_transform,
                 mask_params,
+                clip_params,
             });
         }
 
@@ -1300,6 +1340,43 @@ impl WgpuLive2dRenderer {
         })
     }
 
+    pub fn draw_with_textures_and_clipping(
+        &self,
+        render_pass: &mut wgpu::RenderPass<'_>,
+        mesh_buffers: &WgpuMeshBuffers,
+        textures: &[WgpuTexture],
+        clipping_resources: &WgpuClippingResources,
+        mask_target: &WgpuMaskRenderTarget,
+    ) -> Result<u32, WgpuRenderError> {
+        self.draw_with_textures_clipping_and_transform(
+            render_pass,
+            mesh_buffers,
+            textures,
+            clipping_resources,
+            mask_target,
+            &self.identity_transform,
+        )
+    }
+
+    pub fn draw_with_textures_clipping_and_transform(
+        &self,
+        render_pass: &mut wgpu::RenderPass<'_>,
+        mesh_buffers: &WgpuMeshBuffers,
+        textures: &[WgpuTexture],
+        clipping_resources: &WgpuClippingResources,
+        mask_target: &WgpuMaskRenderTarget,
+        transform: &WgpuTransform,
+    ) -> Result<u32, WgpuRenderError> {
+        self.draw_with_clipping_bind_group_provider(
+            render_pass,
+            mesh_buffers,
+            clipping_resources,
+            mask_target.bind_group(),
+            transform,
+            |texture_index| texture_bind_group_from_textures(textures, texture_index),
+        )
+    }
+
     pub fn draw_masks(
         &self,
         render_pass: &mut wgpu::RenderPass<'_>,
@@ -1387,6 +1464,45 @@ impl WgpuLive2dRenderer {
                 render_pass.draw_indexed(0..drawable.index_count, 0, 0..1);
                 drawn += 1;
             }
+        }
+
+        Ok(drawn)
+    }
+
+    fn draw_with_clipping_bind_group_provider<'a>(
+        &self,
+        render_pass: &mut wgpu::RenderPass<'_>,
+        mesh_buffers: &WgpuMeshBuffers,
+        clipping_resources: &WgpuClippingResources,
+        mask_bind_group: &wgpu::BindGroup,
+        transform: &WgpuTransform,
+        mut bind_group_for_texture: impl FnMut(i32) -> Result<&'a wgpu::BindGroup, WgpuRenderError>,
+    ) -> Result<u32, WgpuRenderError> {
+        let mut drawn = 0;
+        for drawable_index in mesh_buffers.draw_order_indices() {
+            let drawable = &mesh_buffers.drawables[drawable_index];
+            let texture_bind_group = bind_group_for_texture(drawable.texture_index)?;
+
+            if drawable.masks().is_empty() {
+                render_pass.set_pipeline(self.pipeline_for_blend_mode(drawable.blend_mode));
+                render_pass.set_bind_group(0, texture_bind_group, &[]);
+                render_pass.set_bind_group(1, transform.bind_group(), &[]);
+            } else {
+                let context = clipping_resources
+                    .context_for_drawable(drawable_index)
+                    .ok_or(WgpuRenderError::MissingClippingContext { drawable_index })?;
+                render_pass.set_pipeline(self.masked_pipeline_for_blend_mode(drawable.blend_mode));
+                render_pass.set_bind_group(0, texture_bind_group, &[]);
+                render_pass.set_bind_group(1, transform.bind_group(), &[]);
+                render_pass.set_bind_group(2, mask_bind_group, &[]);
+                render_pass.set_bind_group(3, context.clip_params().bind_group(), &[]);
+            }
+
+            render_pass.set_vertex_buffer(0, drawable.vertex_buffer.slice(..));
+            render_pass
+                .set_index_buffer(drawable.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.draw_indexed(0..drawable.index_count, 0, 0..1);
+            drawn += 1;
         }
 
         Ok(drawn)
