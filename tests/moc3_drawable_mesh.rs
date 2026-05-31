@@ -1,6 +1,6 @@
 use rusty_live2d::moc3::{
     Moc3ArtMeshInfo, Moc3ArtMeshKeyformInfo, Moc3ArtMeshKeyforms, Moc3ArtMeshes,
-    build_moc3_drawable_mesh, build_moc3_drawable_meshes,
+    Moc3DrawableBlendMode, build_moc3_drawable_mesh, build_moc3_drawable_meshes,
 };
 
 #[test]
@@ -34,6 +34,22 @@ fn builds_moc3_drawable_mesh_from_art_mesh_sections() {
     assert_eq!(mesh.vertices()[0].uv(), [0.0, 0.0]);
     assert_eq!(mesh.vertices()[2].position(), [1.0, 1.0]);
     assert_eq!(mesh.vertices()[2].uv(), [1.0, 1.0]);
+}
+
+#[test]
+fn resolves_drawable_blend_mode_from_core_flags() {
+    assert_eq!(
+        Moc3DrawableBlendMode::from_flags(0),
+        Moc3DrawableBlendMode::Normal
+    );
+    assert_eq!(
+        Moc3DrawableBlendMode::from_flags(1 << 0),
+        Moc3DrawableBlendMode::Additive
+    );
+    assert_eq!(
+        Moc3DrawableBlendMode::from_flags(1 << 1),
+        Moc3DrawableBlendMode::Multiplicative
+    );
 }
 
 #[test]

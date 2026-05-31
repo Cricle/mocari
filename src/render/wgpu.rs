@@ -1,6 +1,6 @@
 use wgpu::util::DeviceExt;
 
-use crate::moc3::{Moc3DrawableMesh, Moc3DrawableVertex};
+use crate::moc3::{Moc3DrawableBlendMode, Moc3DrawableMesh, Moc3DrawableVertex};
 
 pub const LIVE2D_WGSL: &str = r#"
 struct VertexInput {
@@ -33,12 +33,54 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let sample = textureSample(live2d_texture, live2d_sampler, input.uv);
-    return vec4<f32>(sample.rgb, sample.a * input.opacity);
+    let alpha = sample.a * input.opacity;
+    return vec4<f32>(sample.rgb * alpha, alpha);
 }
 "#;
 
 pub fn live2d_wgsl_source() -> &'static str {
     LIVE2D_WGSL
+}
+
+pub fn live2d_blend_state(blend_mode: Moc3DrawableBlendMode) -> wgpu::BlendState {
+    match blend_mode {
+        Moc3DrawableBlendMode::Normal => wgpu::BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+        },
+        Moc3DrawableBlendMode::Additive => wgpu::BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::Zero,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::Add,
+            },
+        },
+        Moc3DrawableBlendMode::Multiplicative => wgpu::BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::Dst,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::Zero,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::Add,
+            },
+        },
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -104,6 +146,7 @@ pub struct WgpuDrawableBuffers {
     index_buffer: wgpu::Buffer,
     index_count: u32,
     texture_index: i32,
+    blend_mode: Moc3DrawableBlendMode,
     opacity: f32,
     draw_order: f32,
 }
@@ -123,6 +166,10 @@ impl WgpuDrawableBuffers {
 
     pub fn texture_index(&self) -> i32 {
         self.texture_index
+    }
+
+    pub fn blend_mode(&self) -> Moc3DrawableBlendMode {
+        self.blend_mode
     }
 
     pub fn opacity(&self) -> f32 {
@@ -254,7 +301,9 @@ impl WgpuTexture {
 
 #[derive(Debug)]
 pub struct WgpuLive2dRenderer {
-    pipeline: wgpu::RenderPipeline,
+    normal_pipeline: wgpu::RenderPipeline,
+    additive_pipeline: wgpu::RenderPipeline,
+    multiplicative_pipeline: wgpu::RenderPipeline,
     texture_bind_group_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
 }
@@ -303,46 +352,53 @@ impl WgpuLive2dRenderer {
             bind_group_layouts: &bind_group_layouts,
             immediate_size: 0,
         });
-        let vertex_buffers = [WgpuDrawableVertex::buffer_layout()];
-        let color_targets = [Some(wgpu::ColorTargetState {
-            format: color_format,
-            blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-            write_mask: wgpu::ColorWrites::ALL,
-        })];
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("live2d.pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                buffers: &vertex_buffers,
-            },
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                targets: &color_targets,
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
+        let normal_pipeline = create_live2d_pipeline(
+            device,
+            &pipeline_layout,
+            &shader,
+            color_format,
+            Moc3DrawableBlendMode::Normal,
+            "live2d.pipeline.normal",
+        );
+        let additive_pipeline = create_live2d_pipeline(
+            device,
+            &pipeline_layout,
+            &shader,
+            color_format,
+            Moc3DrawableBlendMode::Additive,
+            "live2d.pipeline.additive",
+        );
+        let multiplicative_pipeline = create_live2d_pipeline(
+            device,
+            &pipeline_layout,
+            &shader,
+            color_format,
+            Moc3DrawableBlendMode::Multiplicative,
+            "live2d.pipeline.multiplicative",
+        );
 
         Self {
-            pipeline,
+            normal_pipeline,
+            additive_pipeline,
+            multiplicative_pipeline,
             texture_bind_group_layout,
             sampler,
         }
     }
 
     pub fn pipeline(&self) -> &wgpu::RenderPipeline {
-        &self.pipeline
+        self.pipeline_for_blend_mode(Moc3DrawableBlendMode::Normal)
+    }
+
+    pub fn pipeline_for_blend_mode(
+        &self,
+        blend_mode: Moc3DrawableBlendMode,
+    ) -> &wgpu::RenderPipeline {
+        match blend_mode {
+            Moc3DrawableBlendMode::Normal => &self.normal_pipeline,
+            Moc3DrawableBlendMode::Additive => &self.additive_pipeline,
+            Moc3DrawableBlendMode::Multiplicative => &self.multiplicative_pipeline,
+        }
     }
 
     pub fn texture_bind_group_layout(&self) -> &wgpu::BindGroupLayout {
@@ -458,13 +514,12 @@ impl WgpuLive2dRenderer {
         mesh_buffers: &WgpuMeshBuffers,
         mut bind_group_for_texture: impl FnMut(i32) -> Result<&'a wgpu::BindGroup, WgpuRenderError>,
     ) -> Result<u32, WgpuRenderError> {
-        render_pass.set_pipeline(&self.pipeline);
-
         let mut drawn = 0;
         for drawable_index in mesh_buffers.draw_order_indices() {
             let drawable = &mesh_buffers.drawables[drawable_index];
             let texture_bind_group = bind_group_for_texture(drawable.texture_index)?;
 
+            render_pass.set_pipeline(self.pipeline_for_blend_mode(drawable.blend_mode));
             render_pass.set_bind_group(0, texture_bind_group, &[]);
             render_pass.set_vertex_buffer(0, drawable.vertex_buffer.slice(..));
             render_pass
@@ -538,6 +593,7 @@ pub fn create_wgpu_drawable_buffers(
         index_buffer,
         index_count,
         texture_index: mesh.texture_index(),
+        blend_mode: mesh.blend_mode(),
         opacity: mesh.opacity(),
         draw_order: mesh.draw_order(),
     })
@@ -559,6 +615,47 @@ fn rgba8_len(width: u32, height: u32) -> Result<usize, WgpuTextureError> {
         .ok_or(WgpuTextureError::InvalidTextureSize { width, height })?;
 
     Ok(len)
+}
+
+fn create_live2d_pipeline(
+    device: &wgpu::Device,
+    pipeline_layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    color_format: wgpu::TextureFormat,
+    blend_mode: Moc3DrawableBlendMode,
+    label: &'static str,
+) -> wgpu::RenderPipeline {
+    let vertex_buffers = [WgpuDrawableVertex::buffer_layout()];
+    let color_targets = [Some(wgpu::ColorTargetState {
+        format: color_format,
+        blend: Some(live2d_blend_state(blend_mode)),
+        write_mask: wgpu::ColorWrites::ALL,
+    })];
+
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some(label),
+        layout: Some(pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs_main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            buffers: &vertex_buffers,
+        },
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            targets: &color_targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    })
 }
 
 fn texture_bind_group_at(

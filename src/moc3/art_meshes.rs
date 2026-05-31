@@ -4,6 +4,8 @@ use super::{Endianness, Moc3CountInfo, Moc3Header, Moc3SectionOffsets};
 
 const TEXTURE_INDICES_SLOT: usize = 41;
 const DRAWABLE_FLAGS_SLOT: usize = 42;
+const DRAWABLE_BLEND_ADDITIVE: u8 = 1 << 0;
+const DRAWABLE_BLEND_MULTIPLICATIVE: u8 = 1 << 1;
 const KEYFORM_BEGIN_INDICES_SLOT: usize = 35;
 const KEYFORM_COUNTS_SLOT: usize = 36;
 const VERTEX_COUNTS_SLOT: usize = 43;
@@ -465,6 +467,25 @@ pub struct Moc3DrawableMesh {
     masks: Vec<i32>,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Moc3DrawableBlendMode {
+    Normal,
+    Additive,
+    Multiplicative,
+}
+
+impl Moc3DrawableBlendMode {
+    pub fn from_flags(flags: u8) -> Self {
+        if flags & DRAWABLE_BLEND_ADDITIVE != 0 {
+            Self::Additive
+        } else if flags & DRAWABLE_BLEND_MULTIPLICATIVE != 0 {
+            Self::Multiplicative
+        } else {
+            Self::Normal
+        }
+    }
+}
+
 impl Moc3DrawableMesh {
     pub fn from_parts(
         texture_index: i32,
@@ -492,6 +513,10 @@ impl Moc3DrawableMesh {
 
     pub fn drawable_flags(&self) -> u8 {
         self.drawable_flags
+    }
+
+    pub fn blend_mode(&self) -> Moc3DrawableBlendMode {
+        Moc3DrawableBlendMode::from_flags(self.drawable_flags)
     }
 
     pub fn opacity(&self) -> f32 {
