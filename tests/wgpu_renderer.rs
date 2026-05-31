@@ -44,7 +44,9 @@ fn encodes_wgpu_vertices_and_indices() {
 #[test]
 fn live2d_wgsl_samples_texture_and_applies_opacity() {
     let source = live2d_wgsl_source();
+    let shader_file = std::fs::read_to_string("src/render/shaders/live2d.wgsl").unwrap();
 
+    assert_eq!(source, shader_file);
     assert!(source.contains("@location(0) position: vec2<f32>"));
     assert!(source.contains("@location(1) uv: vec2<f32>"));
     assert!(source.contains("@location(2) opacity: f32"));
