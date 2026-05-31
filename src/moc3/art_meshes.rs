@@ -33,6 +33,7 @@ pub struct Moc3ArtMeshInfo {
 }
 
 impl Moc3ArtMeshInfo {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         texture_index: i32,
         drawable_flags: u8,
@@ -698,9 +699,9 @@ fn validate_keyform_ranges(
     })?;
     let position_len = nonnegative_range_len(vertex_count, 2, "vertex count")?;
 
-    for keyform_index in keyform_begin_index..keyform_begin_index + keyform_len {
+    for keyform in keyforms.iter().skip(keyform_begin_index).take(keyform_len) {
         validate_range(
-            keyforms[keyform_index].position_begin_index,
+            keyform.position_begin_index,
             position_len,
             position_count,
             mesh_index,

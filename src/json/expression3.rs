@@ -107,17 +107,12 @@ pub fn apply_expression_blend(
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub enum ExpressionBlend {
+    #[default]
     Add,
     Multiply,
     Overwrite,
-}
-
-impl Default for ExpressionBlend {
-    fn default() -> Self {
-        Self::Add
-    }
 }
 
 impl ExpressionBlend {

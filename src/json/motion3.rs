@@ -219,6 +219,7 @@ pub fn motion_fade_out_weight(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn parameter_curve_fade_weight(
     motion_weight: f32,
     motion_fade_in: f32,

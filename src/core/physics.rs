@@ -52,6 +52,7 @@ pub struct PhysicsParticle {
 }
 
 impl PhysicsParticle {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         position: Vector2,
         last_position: Vector2,
@@ -184,7 +185,7 @@ pub fn normalize_physics_parameter(
         std::cmp::Ordering::Equal => normalized_middle,
     };
 
-    if reflect { result } else { result * -1.0 }
+    if reflect { result } else { -result }
 }
 
 fn weighted_normalized_value(
@@ -200,12 +201,12 @@ fn weighted_normalized_value(
 
 pub fn physics_output_translation_x(translation: Vector2, reflect: bool) -> f32 {
     let value = translation.x();
-    if reflect { value * -1.0 } else { value }
+    if reflect { -value } else { value }
 }
 
 pub fn physics_output_translation_y(translation: Vector2, reflect: bool) -> f32 {
     let value = translation.y();
-    if reflect { value * -1.0 } else { value }
+    if reflect { -value } else { value }
 }
 
 pub fn parent_gravity_for_physics_output(
@@ -222,10 +223,7 @@ pub fn parent_gravity_for_physics_output(
         ));
     }
 
-    Some(Vector2::new(
-        parent_gravity.x() * -1.0,
-        parent_gravity.y() * -1.0,
-    ))
+    Some(Vector2::new(-parent_gravity.x(), -parent_gravity.y()))
 }
 
 pub fn physics_output_angle_with_parent_gravity(
@@ -234,7 +232,7 @@ pub fn physics_output_angle_with_parent_gravity(
     reflect: bool,
 ) -> f32 {
     let value = direction_to_radian(parent_gravity, translation);
-    if reflect { value * -1.0 } else { value }
+    if reflect { -value } else { value }
 }
 
 pub fn update_physics_particles(
