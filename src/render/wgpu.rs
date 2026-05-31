@@ -224,6 +224,67 @@ impl WgpuMeshBuffers {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WgpuClippingContext {
+    masks: Vec<i32>,
+    drawable_indices: Vec<usize>,
+}
+
+impl WgpuClippingContext {
+    pub fn masks(&self) -> &[i32] {
+        &self.masks
+    }
+
+    pub fn drawable_indices(&self) -> &[usize] {
+        &self.drawable_indices
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WgpuClippingPlan {
+    contexts: Vec<WgpuClippingContext>,
+    unmasked_drawable_indices: Vec<usize>,
+}
+
+impl WgpuClippingPlan {
+    pub fn from_mesh_buffers(mesh_buffers: &WgpuMeshBuffers) -> Self {
+        let mut contexts = Vec::<WgpuClippingContext>::new();
+        let mut unmasked_drawable_indices = Vec::new();
+
+        for (drawable_index, drawable) in mesh_buffers.drawables().iter().enumerate() {
+            if drawable.masks().is_empty() {
+                unmasked_drawable_indices.push(drawable_index);
+                continue;
+            }
+
+            if let Some(context) = contexts
+                .iter_mut()
+                .find(|context| context.masks == drawable.masks())
+            {
+                context.drawable_indices.push(drawable_index);
+            } else {
+                contexts.push(WgpuClippingContext {
+                    masks: drawable.masks().to_vec(),
+                    drawable_indices: vec![drawable_index],
+                });
+            }
+        }
+
+        Self {
+            contexts,
+            unmasked_drawable_indices,
+        }
+    }
+
+    pub fn contexts(&self) -> &[WgpuClippingContext] {
+        &self.contexts
+    }
+
+    pub fn unmasked_drawable_indices(&self) -> &[usize] {
+        &self.unmasked_drawable_indices
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WgpuRenderError {
     InvalidTextureIndex {
         texture_index: i32,

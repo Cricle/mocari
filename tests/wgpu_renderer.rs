@@ -2,9 +2,9 @@ use rusty_live2d::{
     core::Matrix44,
     moc3::{Moc3DrawableBlendMode, Moc3DrawableMesh, Moc3DrawableVertex},
     render::wgpu::{
-        WgpuDrawableVertex, WgpuLive2dRenderer, WgpuMeshBuffers, WgpuRenderError, WgpuTextureError,
-        encode_wgpu_indices, encode_wgpu_matrix, encode_wgpu_vertices, live2d_blend_state,
-        live2d_wgsl_source, wgpu_vertices_from_drawable,
+        WgpuClippingPlan, WgpuDrawableVertex, WgpuLive2dRenderer, WgpuMeshBuffers, WgpuRenderError,
+        WgpuTextureError, encode_wgpu_indices, encode_wgpu_matrix, encode_wgpu_vertices,
+        live2d_blend_state, live2d_wgsl_source, wgpu_vertices_from_drawable,
     },
 };
 
@@ -296,6 +296,27 @@ fn draw_returns_error_for_masked_drawable_until_clipping_is_available() {
             mask_count: 2
         }
     );
+}
+
+#[test]
+fn builds_clipping_plan_from_masked_drawables() {
+    let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let meshes = [
+        test_mesh_with_masks(0, 0.0, vec![1, 2]),
+        test_mesh_with_draw_order(0, 1.0),
+        test_mesh_with_masks(0, 2.0, vec![1, 2]),
+        test_mesh_with_masks(0, 3.0, vec![3]),
+    ];
+    let buffers = WgpuMeshBuffers::from_drawables(&device, &meshes).unwrap();
+
+    let plan = WgpuClippingPlan::from_mesh_buffers(&buffers);
+
+    assert_eq!(plan.unmasked_drawable_indices(), &[1]);
+    assert_eq!(plan.contexts().len(), 2);
+    assert_eq!(plan.contexts()[0].masks(), &[1, 2]);
+    assert_eq!(plan.contexts()[0].drawable_indices(), &[0, 2]);
+    assert_eq!(plan.contexts()[1].masks(), &[3]);
+    assert_eq!(plan.contexts()[1].drawable_indices(), &[3]);
 }
 
 #[test]
