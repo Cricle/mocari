@@ -1,6 +1,7 @@
 use rusty_live2d::core::{
     DeformerTransform, Vector2, WarpInterpolation, rotation_deformer_transform_point,
     transform_art_mesh_vertices_by_deformers, warp_deformer_transform_inside,
+    warp_deformer_transform_target,
 };
 
 fn assert_vec_close(actual: Vector2, expected: Vector2) {
@@ -118,6 +119,27 @@ fn warp_deformer_inside_rejects_outside_or_incomplete_grid() {
         )
         .is_none()
     );
+}
+
+#[test]
+fn warp_deformer_target_extrapolates_points_outside_unit_grid() {
+    let grid = [
+        Vector2::new(0.0, 0.0),
+        Vector2::new(10.0, 0.0),
+        Vector2::new(0.0, 20.0),
+        Vector2::new(10.0, 20.0),
+    ];
+
+    let transformed = warp_deformer_transform_target(
+        Vector2::new(1.25, 0.5),
+        &grid,
+        1,
+        1,
+        WarpInterpolation::Quad,
+    )
+    .unwrap();
+
+    assert_vec_close(transformed, Vector2::new(12.5, 10.0));
 }
 
 #[test]

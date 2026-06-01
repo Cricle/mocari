@@ -19,6 +19,7 @@ pub use blend::{
 pub use deformers::{
     DeformerTransform, WarpInterpolation, rotation_deformer_transform_point,
     transform_art_mesh_vertices_by_deformers, warp_deformer_transform_inside,
+    warp_deformer_transform_target,
 };
 pub use ids::{DrawableId, Id, ParameterId, PartId};
 pub use interpolation::{

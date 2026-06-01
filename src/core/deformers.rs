@@ -70,7 +70,7 @@ pub fn transform_art_mesh_vertices_by_deformers(
                     cols,
                     rows,
                     interpolation,
-                } => warp_deformer_transform_inside(*vertex, grid, cols, rows, interpolation)?,
+                } => warp_deformer_transform_target(*vertex, grid, cols, rows, interpolation)?,
             };
         }
     }
@@ -121,6 +121,51 @@ pub fn warp_deformer_transform_inside(
         WarpInterpolation::Quad => bilinear_cell(s, t, c00, c10, c01, c11),
         WarpInterpolation::Triangle => triangle_cell(s, t, c00, c10, c01, c11),
     })
+}
+
+pub fn warp_deformer_transform_target(
+    local_point: Vector2,
+    grid: &[Vector2],
+    cols: usize,
+    rows: usize,
+    interpolation: WarpInterpolation,
+) -> Option<Vector2> {
+    if (0.0..1.0).contains(&local_point.x()) && (0.0..1.0).contains(&local_point.y()) {
+        return warp_deformer_transform_inside(local_point, grid, cols, rows, interpolation);
+    }
+
+    let stride = cols.checked_add(1)?;
+    let required = stride.checked_mul(rows.checked_add(1)?)?;
+    if cols == 0 || rows == 0 || grid.len() < required {
+        return None;
+    }
+
+    let u = local_point.x() * cols as f32;
+    let v = local_point.y() * rows as f32;
+    let i = outside_cell_index(u, cols)?;
+    let j = outside_cell_index(v, rows)?;
+    let s = u - i as f32;
+    let t = v - j as f32;
+
+    let c00 = grid[j * stride + i];
+    let c10 = grid[j * stride + i + 1];
+    let c01 = grid[(j + 1) * stride + i];
+    let c11 = grid[(j + 1) * stride + i + 1];
+
+    Some(match interpolation {
+        WarpInterpolation::Quad => bilinear_cell(s, t, c00, c10, c01, c11),
+        WarpInterpolation::Triangle => triangle_cell(s, t, c00, c10, c01, c11),
+    })
+}
+
+fn outside_cell_index(value: f32, cell_count: usize) -> Option<usize> {
+    if !value.is_finite() {
+        return None;
+    }
+
+    let max_index = cell_count.checked_sub(1)?;
+    let index = value.floor().clamp(0.0, max_index as f32);
+    Some(index as usize)
 }
 
 fn bilinear_cell(
