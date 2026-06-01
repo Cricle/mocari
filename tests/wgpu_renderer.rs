@@ -6,7 +6,8 @@ use rusty_live2d::{
         WgpuLive2dRenderer, WgpuMaskChannel, WgpuMeshBuffers, WgpuRenderError, WgpuTextureError,
         encode_wgpu_clip_params, encode_wgpu_indices, encode_wgpu_mask_params, encode_wgpu_matrix,
         encode_wgpu_vertices, live2d_blend_state, live2d_masked_wgsl_source, live2d_wgsl_source,
-        mask_wgsl_source, wgpu_mask_blend_state, wgpu_vertices_from_drawable,
+        mask_wgsl_source, preferred_surface_format, wgpu_mask_blend_state,
+        wgpu_vertices_from_drawable,
     },
 };
 
@@ -202,6 +203,21 @@ fn exposes_inverse_mask_blend_state() {
     assert_eq!(blend.color.dst_factor, wgpu::BlendFactor::OneMinusSrc);
     assert_eq!(blend.alpha.src_factor, wgpu::BlendFactor::Zero);
     assert_eq!(blend.alpha.dst_factor, wgpu::BlendFactor::OneMinusSrcAlpha);
+}
+
+#[test]
+fn prefers_unorm_surface_format_for_live2d_gamma_blending() {
+    let formats = [
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+        wgpu::TextureFormat::Bgra8Unorm,
+        wgpu::TextureFormat::Rgba8UnormSrgb,
+        wgpu::TextureFormat::Rgba8Unorm,
+    ];
+
+    assert_eq!(
+        preferred_surface_format(&formats),
+        Some(wgpu::TextureFormat::Bgra8Unorm)
+    );
 }
 
 #[test]
@@ -836,6 +852,7 @@ fn creates_rgba8_texture_with_bind_group() {
 
     assert_eq!(texture.width(), 2);
     assert_eq!(texture.height(), 2);
+    assert_eq!(texture.texture().format(), wgpu::TextureFormat::Rgba8Unorm);
     let _ = texture.texture();
     let _ = texture.view();
     let _ = texture.bind_group();

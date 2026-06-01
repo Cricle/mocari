@@ -17,7 +17,7 @@ pub use clipping::{
 pub use draw::WgpuRenderError;
 pub use pipeline::{
     live2d_blend_state, live2d_masked_wgsl_source, live2d_wgsl_source, mask_wgsl_source,
-    wgpu_mask_blend_state,
+    preferred_surface_format, wgpu_mask_blend_state,
 };
 pub use texture::{
     WgpuClipParams, WgpuMaskParams, WgpuTexture, WgpuTextureError, WgpuTransform,

@@ -6,7 +6,7 @@ use rusty_live2d::{
     moc3::Moc3DrawableMesh,
     render::wgpu::{
         WgpuClippingPlan, WgpuClippingResources, WgpuLive2dRenderer, WgpuMaskRenderTarget,
-        WgpuMeshBuffers, WgpuTexture, WgpuTransform,
+        WgpuMeshBuffers, WgpuTexture, WgpuTransform, preferred_surface_format,
     },
 };
 use winit::{
@@ -138,9 +138,11 @@ impl WindowState {
             })
             .await?;
 
-        let config = surface
+        let mut config = surface
             .get_default_config(&adapter, size.width.max(1), size.height.max(1))
             .ok_or(ExampleError("surface is not supported by this adapter"))?;
+        let capabilities = surface.get_capabilities(&adapter);
+        config.format = preferred_surface_format(&capabilities.formats).unwrap_or(config.format);
         surface.configure(&device, &config);
 
         let renderer = WgpuLive2dRenderer::new(&device, config.format);

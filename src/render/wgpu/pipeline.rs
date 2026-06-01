@@ -25,6 +25,18 @@ pub fn mask_wgsl_source() -> &'static str {
     include_str!("../shaders/mask.wgsl")
 }
 
+pub fn preferred_surface_format(formats: &[wgpu::TextureFormat]) -> Option<wgpu::TextureFormat> {
+    formats
+        .iter()
+        .copied()
+        .find_map(|format| {
+            let unorm = format.remove_srgb_suffix();
+            (unorm != format && formats.contains(&unorm)).then_some(unorm)
+        })
+        .or_else(|| formats.iter().copied().find(|format| !format.is_srgb()))
+        .or_else(|| formats.first().copied())
+}
+
 pub fn live2d_blend_state(blend_mode: Moc3DrawableBlendMode) -> wgpu::BlendState {
     match blend_mode {
         Moc3DrawableBlendMode::Normal => wgpu::BlendState {
@@ -446,7 +458,7 @@ impl WgpuLive2dRenderer {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
