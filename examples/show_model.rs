@@ -3,7 +3,7 @@ use std::{error::Error, fmt, sync::Arc};
 use rusty_live2d::{
     assets::{DecodedTexture, load_model},
     core::Matrix44,
-    moc3::Moc3DrawableMesh,
+    moc3::{Moc3DrawableMesh, Moc3DrawableVertex},
     render::wgpu::{
         WgpuClippingPlan, WgpuClippingResources, WgpuLive2dRenderer, WgpuMaskRenderTarget,
         WgpuMeshBuffers, WgpuTexture, WgpuTransform, preferred_surface_format,
@@ -11,8 +11,8 @@ use rusty_live2d::{
 };
 use winit::{
     application::ApplicationHandler,
-    dpi::{LogicalSize, PhysicalSize},
-    event::WindowEvent,
+    dpi::{LogicalSize, PhysicalPosition, PhysicalSize},
+    event::{ElementState, MouseButton, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     window::{Window, WindowId},
 };
@@ -21,7 +21,52 @@ const WINDOW_WIDTH: u32 = 900;
 const WINDOW_HEIGHT: u32 = 900;
 const MASK_TEXTURE_SIZE: u32 = 256;
 const MODEL_VIEW_FILL: f32 = 1.85;
-const DEFAULT_MODEL_PATH: &str = "assets/models/hiyori_free_en/runtime/hiyori_free_t08.model3.json";
+const SWITCH_BUTTON_X: f64 = 16.0;
+const SWITCH_BUTTON_Y: f64 = 16.0;
+const SWITCH_BUTTON_WIDTH: f64 = 148.0;
+const SWITCH_BUTTON_HEIGHT: f64 = 42.0;
+const SWITCH_BUTTON_RGBA: &[u8] = &[46, 65, 78, 220];
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+struct ModelSpec {
+    name: &'static str,
+    path: &'static str,
+}
+
+const MODEL_SPECS: &[ModelSpec] = &[
+    ModelSpec {
+        name: "Wanko",
+        path: "assets/models/Wanko/Wanko.model3.json",
+    },
+    ModelSpec {
+        name: "Hiyori",
+        path: "assets/models/Hiyori/Hiyori.model3.json",
+    },
+    ModelSpec {
+        name: "Haru",
+        path: "assets/models/Haru/Haru.model3.json",
+    },
+    ModelSpec {
+        name: "Ren",
+        path: "assets/models/Ren/Ren.model3.json",
+    },
+    ModelSpec {
+        name: "Mark",
+        path: "assets/models/Mark/Mark.model3.json",
+    },
+    ModelSpec {
+        name: "Rice",
+        path: "assets/models/Rice/Rice.model3.json",
+    },
+    ModelSpec {
+        name: "Natori",
+        path: "assets/models/Natori/Natori.model3.json",
+    },
+    ModelSpec {
+        name: "Mao",
+        path: "assets/models/Mao/Mao.model3.json",
+    },
+];
 
 fn main() -> Result<(), Box<dyn Error>> {
     let event_loop = EventLoop::new()?;
@@ -44,7 +89,7 @@ impl ApplicationHandler for ShowModelApp {
         }
 
         let attributes = Window::default_attributes()
-            .with_title("Live2D - Hiyori")
+            .with_title(window_title(MODEL_SPECS[0]))
             .with_inner_size(LogicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT));
         let window = match event_loop.create_window(attributes) {
             Ok(window) => Arc::new(window),
@@ -79,8 +124,33 @@ impl ApplicationHandler for ShowModelApp {
 
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
-            WindowEvent::Resized(size) => state.resize(size),
-            WindowEvent::ScaleFactorChanged { .. } => state.resize(state.window.inner_size()),
+            WindowEvent::Resized(size) => {
+                if let Err(error) = state.resize(size) {
+                    eprintln!("resize failed: {error}");
+                    event_loop.exit();
+                }
+            }
+            WindowEvent::ScaleFactorChanged { .. } => {
+                if let Err(error) = state.resize(state.window.inner_size()) {
+                    eprintln!("resize failed: {error}");
+                    event_loop.exit();
+                }
+            }
+            WindowEvent::CursorMoved { position, .. } => state.cursor_position = Some(position),
+            WindowEvent::MouseInput {
+                state: button_state,
+                button,
+                ..
+            } => {
+                if button_state == ElementState::Pressed
+                    && button == MouseButton::Left
+                    && state.switch_button_hit()
+                    && let Err(error) = state.switch_to_next_model()
+                {
+                    eprintln!("model switch failed: {error}");
+                    event_loop.exit();
+                }
+            }
             WindowEvent::RedrawRequested => {
                 if let Err(error) = state.render() {
                     eprintln!("render failed: {error}");
@@ -105,6 +175,15 @@ struct WindowState {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     renderer: WgpuLive2dRenderer,
+    model_index: usize,
+    model: LoadedModel,
+    button_buffers: WgpuMeshBuffers,
+    button_texture: WgpuTexture,
+    button_transform: WgpuTransform,
+    cursor_position: Option<PhysicalPosition<f64>>,
+}
+
+struct LoadedModel {
     mesh_buffers: WgpuMeshBuffers,
     textures: Vec<WgpuTexture>,
     clipping_resources: WgpuClippingResources,
@@ -115,10 +194,6 @@ struct WindowState {
 
 impl WindowState {
     async fn new(window: Arc<Window>) -> Result<Self, Box<dyn Error>> {
-        let default_model = load_model(DEFAULT_MODEL_PATH)?;
-        let model_bounds = ModelBounds::from_drawables(default_model.meshes())
-            .ok_or(ExampleError("default model has no drawable bounds"))?;
-
         let size = window.inner_size();
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let surface = instance.create_surface(window.clone())?;
@@ -146,15 +221,14 @@ impl WindowState {
         surface.configure(&device, &config);
 
         let renderer = WgpuLive2dRenderer::new(&device, config.format);
-        let mesh_buffers = WgpuMeshBuffers::from_drawables(&device, default_model.meshes())
-            .ok_or(ExampleError("failed to create mesh buffers"))?;
-        let textures = create_textures(&renderer, &device, &queue, default_model.textures())?;
-
-        let mut clipping_plan = WgpuClippingPlan::from_mesh_buffers(&mesh_buffers);
-        clipping_plan.prepare_single_texture_masks(&mesh_buffers)?;
-        let clipping_resources = renderer.create_clipping_resources(&device, &clipping_plan)?;
-        let mask_target = renderer.create_mask_render_target(&device, MASK_TEXTURE_SIZE)?;
-        let transform = renderer.create_transform(&device, &fit_model_matrix(model_bounds, size));
+        let model_index = 0;
+        let model =
+            load_rendered_model(&renderer, &device, &queue, MODEL_SPECS[model_index], size)?;
+        let button_buffers = create_switch_button_buffers(&device, size)?;
+        let button_texture =
+            renderer.create_rgba8_texture(&device, &queue, 1, 1, SWITCH_BUTTON_RGBA)?;
+        let button_transform = renderer.create_transform(&device, &Matrix44::identity());
+        window.set_title(&window_title(MODEL_SPECS[model_index]));
 
         Ok(Self {
             window,
@@ -163,26 +237,55 @@ impl WindowState {
             queue,
             config,
             renderer,
-            mesh_buffers,
-            textures,
-            clipping_resources,
-            mask_target,
-            transform,
-            model_bounds,
+            model_index,
+            model,
+            button_buffers,
+            button_texture,
+            button_transform,
+            cursor_position: None,
         })
     }
 
-    fn resize(&mut self, size: PhysicalSize<u32>) {
+    fn resize(&mut self, size: PhysicalSize<u32>) -> Result<(), Box<dyn Error>> {
         if size.width == 0 || size.height == 0 {
-            return;
+            return Ok(());
         }
 
         self.config.width = size.width;
         self.config.height = size.height;
         self.surface.configure(&self.device, &self.config);
-        self.transform = self
-            .renderer
-            .create_transform(&self.device, &fit_model_matrix(self.model_bounds, size));
+        self.model.transform = self.renderer.create_transform(
+            &self.device,
+            &fit_model_matrix(self.model.model_bounds, size),
+        );
+        self.button_buffers = create_switch_button_buffers(&self.device, size)?;
+        Ok(())
+    }
+
+    fn switch_button_hit(&self) -> bool {
+        self.cursor_position
+            .map(|position| switch_button_rect().contains(position.x, position.y))
+            .unwrap_or(false)
+    }
+
+    fn switch_to_next_model(&mut self) -> Result<(), Box<dyn Error>> {
+        let Some(next_index) = next_model_index(self.model_index, MODEL_SPECS.len()) else {
+            return Ok(());
+        };
+        let spec = MODEL_SPECS[next_index];
+        let model = load_rendered_model(
+            &self.renderer,
+            &self.device,
+            &self.queue,
+            spec,
+            self.window.inner_size(),
+        )?;
+
+        self.model_index = next_index;
+        self.model = model;
+        self.window.set_title(&window_title(spec));
+        self.window.request_redraw();
+        Ok(())
     }
 
     fn render(&mut self) -> Result<(), Box<dyn Error>> {
@@ -193,7 +296,7 @@ impl WindowState {
                 return Ok(());
             }
             wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
-                self.resize(self.window.inner_size());
+                self.resize(self.window.inner_size())?;
                 return Ok(());
             }
             wgpu::CurrentSurfaceTexture::Validation => {
@@ -214,7 +317,7 @@ impl WindowState {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("show_model.mask_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: self.mask_target.view(),
+                    view: self.model.mask_target.view(),
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -230,9 +333,9 @@ impl WindowState {
 
             self.renderer.draw_masks_with_textures(
                 &mut pass,
-                &self.mesh_buffers,
-                &self.clipping_resources,
-                &self.textures,
+                &self.model.mesh_buffers,
+                &self.model.clipping_resources,
+                &self.model.textures,
             )?;
         }
 
@@ -261,11 +364,17 @@ impl WindowState {
 
             self.renderer.draw_with_textures_clipping_and_transform(
                 &mut pass,
-                &self.mesh_buffers,
-                &self.textures,
-                &self.clipping_resources,
-                &self.mask_target,
-                &self.transform,
+                &self.model.mesh_buffers,
+                &self.model.textures,
+                &self.model.clipping_resources,
+                &self.model.mask_target,
+                &self.model.transform,
+            )?;
+            self.renderer.draw_with_textures_and_transform(
+                &mut pass,
+                &self.button_buffers,
+                std::slice::from_ref(&self.button_texture),
+                &self.button_transform,
             )?;
         }
 
@@ -274,6 +383,49 @@ impl WindowState {
         frame.present();
         Ok(())
     }
+}
+
+fn window_title(model: ModelSpec) -> String {
+    format!("Live2D - {}", model.name)
+}
+
+fn next_model_index(current: usize, count: usize) -> Option<usize> {
+    if count == 0 {
+        None
+    } else {
+        Some((current + 1) % count)
+    }
+}
+
+fn load_rendered_model(
+    renderer: &WgpuLive2dRenderer,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    spec: ModelSpec,
+    surface_size: PhysicalSize<u32>,
+) -> Result<LoadedModel, Box<dyn Error>> {
+    let model = load_model(spec.path)?;
+    let model_bounds = ModelBounds::from_drawables(model.meshes())
+        .ok_or(ExampleError("model has no drawable bounds"))?;
+    let mesh_buffers = WgpuMeshBuffers::from_drawables(device, model.meshes())
+        .ok_or(ExampleError("failed to create mesh buffers"))?;
+    let textures = create_textures(renderer, device, queue, model.textures())?;
+
+    let mut clipping_plan = WgpuClippingPlan::from_mesh_buffers(&mesh_buffers);
+    clipping_plan.prepare_single_texture_masks(&mesh_buffers)?;
+    let clipping_resources = renderer.create_clipping_resources(device, &clipping_plan)?;
+    let mask_target = renderer.create_mask_render_target(device, MASK_TEXTURE_SIZE)?;
+    let transform =
+        renderer.create_transform(device, &fit_model_matrix(model_bounds, surface_size));
+
+    Ok(LoadedModel {
+        mesh_buffers,
+        textures,
+        clipping_resources,
+        mask_target,
+        transform,
+        model_bounds,
+    })
 }
 
 fn create_textures(
@@ -296,6 +448,80 @@ fn create_textures(
                 .map_err(|error| Box::new(error) as Box<dyn Error>)
         })
         .collect()
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct ButtonRect {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+impl ButtonRect {
+    fn contains(self, x: f64, y: f64) -> bool {
+        x >= self.x && x <= self.x + self.width && y >= self.y && y <= self.y + self.height
+    }
+}
+
+fn switch_button_rect() -> ButtonRect {
+    ButtonRect {
+        x: SWITCH_BUTTON_X,
+        y: SWITCH_BUTTON_Y,
+        width: SWITCH_BUTTON_WIDTH,
+        height: SWITCH_BUTTON_HEIGHT,
+    }
+}
+
+fn create_switch_button_buffers(
+    device: &wgpu::Device,
+    surface_size: PhysicalSize<u32>,
+) -> Result<WgpuMeshBuffers, Box<dyn Error>> {
+    let mesh =
+        switch_button_mesh(surface_size).ok_or(ExampleError("invalid switch button size"))?;
+    WgpuMeshBuffers::from_drawables(device, &[mesh])
+        .ok_or_else(|| Box::new(ExampleError("failed to create switch button buffers")).into())
+}
+
+fn switch_button_mesh(surface_size: PhysicalSize<u32>) -> Option<Moc3DrawableMesh> {
+    if surface_size.width == 0 || surface_size.height == 0 {
+        return None;
+    }
+
+    let rect = switch_button_rect();
+    let right = (rect.x + rect.width).min(f64::from(surface_size.width));
+    let bottom = (rect.y + rect.height).min(f64::from(surface_size.height));
+    if right <= rect.x || bottom <= rect.y {
+        return None;
+    }
+
+    let left = pixel_x_to_ndc(rect.x, surface_size.width);
+    let right = pixel_x_to_ndc(right, surface_size.width);
+    let top = pixel_y_to_ndc(rect.y, surface_size.height);
+    let bottom = pixel_y_to_ndc(bottom, surface_size.height);
+
+    Some(Moc3DrawableMesh::from_parts(
+        0,
+        0,
+        1.0,
+        0.0,
+        vec![
+            Moc3DrawableVertex::new([left, top], [0.0, 0.0]),
+            Moc3DrawableVertex::new([right, top], [1.0, 0.0]),
+            Moc3DrawableVertex::new([right, bottom], [1.0, 1.0]),
+            Moc3DrawableVertex::new([left, bottom], [0.0, 1.0]),
+        ],
+        vec![0, 1, 2, 0, 2, 3],
+        Vec::new(),
+    ))
+}
+
+fn pixel_x_to_ndc(x: f64, width: u32) -> f32 {
+    ((x / f64::from(width)) * 2.0 - 1.0) as f32
+}
+
+fn pixel_y_to_ndc(y: f64, height: u32) -> f32 {
+    (1.0 - (y / f64::from(height)) * 2.0) as f32
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -407,6 +633,63 @@ mod tests {
         let matrix = fit_model_matrix(bounds, PhysicalSize::new(200, 100));
 
         assert_close(matrix.scale_x() * 200.0, matrix.scale_y() * 100.0);
+    }
+
+    #[test]
+    fn model_specs_point_at_bundled_models() {
+        let names = MODEL_SPECS
+            .iter()
+            .map(|model| model.name)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            names,
+            vec![
+                "Wanko", "Hiyori", "Haru", "Ren", "Mark", "Rice", "Natori", "Mao"
+            ]
+        );
+        for model in MODEL_SPECS {
+            assert!(
+                std::path::Path::new(model.path).exists(),
+                "missing model asset: {}",
+                model.path
+            );
+        }
+    }
+
+    #[test]
+    fn model_specs_load_drawable_meshes() {
+        for spec in MODEL_SPECS {
+            let model = load_model(spec.path).expect(spec.path);
+
+            assert!(
+                !model.meshes().is_empty(),
+                "model has no drawable meshes: {}",
+                spec.path
+            );
+            assert!(
+                !model.textures().is_empty(),
+                "model has no textures: {}",
+                spec.path
+            );
+        }
+    }
+
+    #[test]
+    fn next_model_index_advances_and_wraps() {
+        assert_eq!(next_model_index(0, 3), Some(1));
+        assert_eq!(next_model_index(2, 3), Some(0));
+        assert_eq!(next_model_index(0, 0), None);
+    }
+
+    #[test]
+    fn switch_button_hit_test_uses_top_left_rect() {
+        let rect = switch_button_rect();
+
+        assert!(rect.contains(20.0, 20.0));
+        assert!(rect.contains(rect.x + rect.width, rect.y + rect.height));
+        assert!(!rect.contains(rect.x + rect.width + 1.0, rect.y));
+        assert!(!rect.contains(rect.x, rect.y + rect.height + 1.0));
     }
 
     fn assert_close(actual: f32, expected: f32) {

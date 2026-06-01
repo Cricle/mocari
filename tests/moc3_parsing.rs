@@ -21,6 +21,14 @@ mod moc3_header {
     }
 
     #[test]
+    fn parses_moc3_53_header_version() {
+        let header = Moc3Header::parse(&header_bytes(6, 0)).unwrap();
+
+        assert_eq!(header.version(), Moc3Version::V5_3_0);
+        assert_eq!(header.endianness(), Endianness::Little);
+    }
+
+    #[test]
     fn rejects_short_moc3_header() {
         let error = Moc3Header::parse(b"MOC3").unwrap_err();
 
@@ -244,6 +252,16 @@ mod moc3_offsets {
         assert_eq!(offsets.section_offset(1), Some(0x840));
         assert_eq!(offsets.section_offset(2), Some(0x880));
         assert_eq!(offsets.section_offset(160), None);
+    }
+
+    #[test]
+    fn accepts_unused_optional_offsets_at_file_end() {
+        let mut bytes = moc3_with_offsets(0x7c0, 0x840, 0x900);
+        bytes[0x1a4..0x1a8].copy_from_slice(&0x900u32.to_le_bytes());
+
+        let offsets = Moc3SectionOffsets::parse(&bytes).unwrap();
+
+        assert_eq!(offsets.section_offset(89), Some(0x900));
     }
 
     #[test]

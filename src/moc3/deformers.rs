@@ -176,6 +176,13 @@ impl Moc3KeyformBindings {
             return None;
         }
 
+        if band_index < 0 {
+            return Some(vec![Moc3KeyformSlot {
+                local_index: 0,
+                weight: 1.0,
+            }]);
+        }
+
         let bindings = self.band_keyform_bindings(band_index)?;
         if bindings.is_empty() {
             return Some(vec![Moc3KeyformSlot {

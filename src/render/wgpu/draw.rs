@@ -187,6 +187,9 @@ impl WgpuLive2dRenderer {
                 .drawables()
                 .get(drawable_index)
                 .ok_or(WgpuRenderError::MissingDrawable { drawable_index })?;
+            if drawable.is_empty() {
+                continue;
+            }
             if !drawable.masks().is_empty() {
                 return Err(WgpuRenderError::UnsupportedClippingMasks {
                     drawable_index,
@@ -222,6 +225,9 @@ impl WgpuLive2dRenderer {
                     .drawables()
                     .get(drawable_index)
                     .ok_or(WgpuRenderError::MissingDrawable { drawable_index })?;
+                if drawable.is_empty() {
+                    continue;
+                }
                 let texture_bind_group = bind_group_for_texture(drawable.texture_index())?;
 
                 render_pass.set_pipeline(&self.mask_pipeline);
@@ -254,6 +260,9 @@ impl WgpuLive2dRenderer {
                 .drawables()
                 .get(drawable_index)
                 .ok_or(WgpuRenderError::MissingDrawable { drawable_index })?;
+            if drawable.is_empty() {
+                continue;
+            }
             let texture_bind_group = bind_group_for_texture(drawable.texture_index())?;
 
             if drawable.masks().is_empty() {

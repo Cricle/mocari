@@ -79,6 +79,10 @@ fn validate_optional_offset(bytes: &[u8], offset: u32, index: usize) -> Result<(
         return Ok(());
     }
 
+    if usize::try_from(offset).ok() == Some(bytes.len()) {
+        return Ok(());
+    }
+
     validate_offset(bytes, offset, format!("section {index}"))
 }
 

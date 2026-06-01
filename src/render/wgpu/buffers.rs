@@ -65,6 +65,7 @@ impl WgpuDrawableVertex {
 pub struct WgpuDrawableBuffers {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
+    vertex_count: u32,
     index_count: u32,
     texture_index: i32,
     blend_mode: Moc3DrawableBlendMode,
@@ -86,6 +87,10 @@ impl WgpuDrawableBuffers {
 
     pub fn index_count(&self) -> u32 {
         self.index_count
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.vertex_count == 0 || self.index_count == 0
     }
 
     pub fn texture_index(&self) -> i32 {
@@ -196,6 +201,7 @@ pub fn create_wgpu_drawable_buffers(
     let vertices = wgpu_vertices_from_drawable(mesh);
     let vertex_bytes = encode_wgpu_vertices(&vertices);
     let index_bytes = encode_wgpu_indices(mesh.indices());
+    let vertex_count = u32::try_from(vertices.len()).ok()?;
     let index_count = u32::try_from(mesh.indices().len()).ok()?;
 
     let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -212,6 +218,7 @@ pub fn create_wgpu_drawable_buffers(
     Some(WgpuDrawableBuffers {
         vertex_buffer,
         index_buffer,
+        vertex_count,
         index_count,
         texture_index: mesh.texture_index(),
         blend_mode: mesh.blend_mode(),

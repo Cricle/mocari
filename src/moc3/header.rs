@@ -48,6 +48,7 @@ pub enum Moc3Version {
     V4_0_0,
     V4_2_0,
     V5_0_0,
+    V5_3_0,
 }
 
 impl Moc3Version {
@@ -58,6 +59,7 @@ impl Moc3Version {
             3 => Some(Self::V4_0_0),
             4 => Some(Self::V4_2_0),
             5 => Some(Self::V5_0_0),
+            6 => Some(Self::V5_3_0),
             _ => None,
         }
     }
@@ -66,7 +68,7 @@ impl Moc3Version {
         match self {
             Self::V3_0_0 | Self::V3_3_0 | Self::V4_0_0 => 23,
             Self::V4_2_0 => 32,
-            Self::V5_0_0 => 35,
+            Self::V5_0_0 | Self::V5_3_0 => 35,
         }
     }
 }
