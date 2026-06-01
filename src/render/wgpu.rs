@@ -139,6 +139,7 @@ pub struct WgpuDrawableBuffers {
     blend_mode: Moc3DrawableBlendMode,
     opacity: f32,
     draw_order: f32,
+    render_order: i32,
     masks: Vec<i32>,
     bounds: Option<WgpuClippingRect>,
 }
@@ -170,6 +171,10 @@ impl WgpuDrawableBuffers {
 
     pub fn draw_order(&self) -> f32 {
         self.draw_order
+    }
+
+    pub fn render_order(&self) -> i32 {
+        self.render_order
     }
 
     pub fn masks(&self) -> &[i32] {
@@ -206,6 +211,11 @@ impl WgpuMeshBuffers {
             self.drawables[*left]
                 .draw_order
                 .total_cmp(&self.drawables[*right].draw_order)
+                .then_with(|| {
+                    self.drawables[*left]
+                        .render_order
+                        .cmp(&self.drawables[*right].render_order)
+                })
                 .then_with(|| left.cmp(right))
         });
         indices
@@ -582,15 +592,19 @@ fn clipping_matrices(
     let scale_x = layout.width / bounds.width;
     let scale_y = layout.height / bounds.height;
     let draw_translate_x = -bounds.x * scale_x + layout.x;
-    let draw_translate_y = -bounds.y * scale_y + layout.y;
+    let normalized_translate_y = -bounds.y * scale_y + layout.y;
+    let texture_translate_y = 1.0 - layout.y + bounds.y * scale_y;
 
     let mut matrix_for_draw = Matrix44::identity();
-    matrix_for_draw.scale(scale_x, scale_y);
-    matrix_for_draw.translate(draw_translate_x, draw_translate_y);
+    matrix_for_draw.scale(scale_x, -scale_y);
+    matrix_for_draw.translate(draw_translate_x, texture_translate_y);
 
     let mut matrix_for_mask = Matrix44::identity();
     matrix_for_mask.scale(scale_x * 2.0, scale_y * 2.0);
-    matrix_for_mask.translate(draw_translate_x * 2.0 - 1.0, draw_translate_y * 2.0 - 1.0);
+    matrix_for_mask.translate(
+        draw_translate_x * 2.0 - 1.0,
+        normalized_translate_y * 2.0 - 1.0,
+    );
 
     Some((matrix_for_mask, matrix_for_draw))
 }
@@ -1608,6 +1622,7 @@ pub fn create_wgpu_drawable_buffers(
         blend_mode: mesh.blend_mode(),
         opacity: mesh.opacity(),
         draw_order: mesh.draw_order(),
+        render_order: mesh.render_order(),
         masks: mesh.masks().to_vec(),
         bounds: drawable_vertex_bounds(mesh.vertices()),
     })

@@ -555,6 +555,19 @@ fn mesh_buffers_expose_stable_draw_order_indices() {
 }
 
 #[test]
+fn mesh_buffers_use_render_order_rank_to_break_draw_order_ties() {
+    let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let meshes = [
+        test_mesh_with_render_order(0, 650.0, 70),
+        test_mesh_with_render_order(1, 650.0, 49),
+        test_mesh_with_render_order(2, 600.0, 90),
+    ];
+    let buffers = WgpuMeshBuffers::from_drawables(&device, &meshes).unwrap();
+
+    assert_eq!(buffers.draw_order_indices(), vec![2, 1, 0]);
+}
+
+#[test]
 fn draw_returns_error_for_missing_texture_bind_group() {
     let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
     let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
@@ -794,8 +807,8 @@ fn prepares_clipping_bounds_and_matrices_from_clipped_drawables() {
     let draw_matrix = context.matrix_for_draw().unwrap();
     assert_f32_close(draw_matrix.transform_x(-1.2), 0.0);
     assert_f32_close(draw_matrix.transform_x(3.2), 1.0);
-    assert_f32_close(draw_matrix.transform_y(-2.3), 0.0);
-    assert_f32_close(draw_matrix.transform_y(4.3), 1.0);
+    assert_f32_close(draw_matrix.transform_y(-2.3), 1.0);
+    assert_f32_close(draw_matrix.transform_y(4.3), 0.0);
 
     let mask_matrix = context.matrix_for_mask().unwrap();
     assert_f32_close(mask_matrix.transform_x(-1.2), -1.0);
@@ -1097,6 +1110,27 @@ fn test_mesh_with_flags(
 
 fn test_mesh_with_masks(texture_index: u8, draw_order: f32, masks: Vec<i32>) -> Moc3DrawableMesh {
     test_mesh(texture_index, 0, draw_order, masks)
+}
+
+fn test_mesh_with_render_order(
+    texture_index: u8,
+    draw_order: f32,
+    render_order: i32,
+) -> Moc3DrawableMesh {
+    Moc3DrawableMesh::from_parts_with_render_order(
+        i32::from(texture_index),
+        0,
+        1.0,
+        draw_order,
+        render_order,
+        vec![
+            Moc3DrawableVertex::new([-0.5, -0.5], [0.0, 0.0]),
+            Moc3DrawableVertex::new([0.5, -0.5], [1.0, 0.0]),
+            Moc3DrawableVertex::new([0.0, 0.5], [0.5, 1.0]),
+        ],
+        vec![0, 1, 2],
+        Vec::new(),
+    )
 }
 
 fn test_mesh(
