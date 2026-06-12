@@ -6,6 +6,7 @@ mod deformers;
 mod drawable;
 mod header;
 mod ids;
+mod keyform_bindings;
 mod keyforms;
 mod mesh_build;
 mod offscreen;
@@ -15,13 +16,14 @@ mod parse;
 pub use art_meshes::{Moc3ArtMeshInfo, Moc3ArtMeshes};
 pub use canvas::Moc3CanvasInfo;
 pub use counts::Moc3CountInfo;
-pub use deformers::{Moc3Deformers, Moc3KeyformBindings};
+pub use deformers::Moc3Deformers;
 pub use drawable::{
     Moc3DrawableBlendMode, Moc3DrawableMesh, Moc3DrawableVertex, build_moc3_drawable_mesh,
     build_moc3_drawable_meshes,
 };
 pub use header::{Endianness, Moc3Header, Moc3Version};
 pub use ids::Moc3Ids;
+pub use keyform_bindings::Moc3KeyformBindings;
 pub use keyforms::{Moc3ArtMeshKeyformInfo, Moc3ArtMeshKeyforms};
 pub use mesh_build::{
     build_moc3_drawable_meshes_for_default_pose,

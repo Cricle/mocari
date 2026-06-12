@@ -3,7 +3,7 @@ use crate::core::Vector2;
 use super::{
     Moc3ArtMeshKeyformInfo, Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3Deformers, Moc3DrawableMesh,
     Moc3DrawableVertex, Moc3Ids, Moc3KeyformBindings, Moc3OffscreenInfo, build_moc3_drawable_mesh,
-    compose::ComposedDeformers, deformers::Moc3KeyformSlot,
+    compose::ComposedDeformers, keyform_bindings::Moc3KeyformSlot,
 };
 
 pub fn build_moc3_drawable_meshes_for_default_pose(
