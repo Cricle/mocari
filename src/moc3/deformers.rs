@@ -91,10 +91,100 @@ struct InterpolatedRotation {
     flip_y: bool,
 }
 
+const ROTATION_DERIVATIVE_STEP: f32 = 0.1;
+
+#[derive(Debug, Clone, PartialEq)]
+enum ComposedDeformer {
+    Warp(ComposedWarp),
+    Rotation(ComposedRotation),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct ComposedWarp {
+    grid: Vec<Vector2>,
+    cols: usize,
+    rows: usize,
+    scale_accum: f32,
+}
+
 #[derive(Debug, Copy, Clone, PartialEq)]
-struct DeformerBounds {
-    min: Vector2,
-    max: Vector2,
+struct ComposedRotation {
+    origin: Vector2,
+    angle_degrees: f32,
+    scale: f32,
+    flip_x: bool,
+    flip_y: bool,
+    scale_accum: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ComposedDeformers {
+    deformers: Vec<ComposedDeformer>,
+}
+
+impl ComposedDeformers {
+    fn transform_vertices(
+        &self,
+        parent_deformer_index: i32,
+        vertices: &mut [Vector2],
+    ) -> Option<()> {
+        if parent_deformer_index < 0 {
+            return Some(());
+        }
+        let index = usize::try_from(parent_deformer_index).ok()?;
+        for vertex in vertices {
+            *vertex = apply_one(self.deformers.get(index)?, *vertex)?;
+        }
+        Some(())
+    }
+}
+
+fn apply_one(deformer: &ComposedDeformer, point: Vector2) -> Option<Vector2> {
+    match deformer {
+        ComposedDeformer::Warp(warp) => warp_deformer_transform_target(
+            point,
+            &warp.grid,
+            warp.cols,
+            warp.rows,
+            WarpInterpolation::Quad,
+        ),
+        ComposedDeformer::Rotation(rotation) => Some(rotation_deformer_transform_point(
+            point,
+            rotation.angle_degrees,
+            rotation.scale,
+            rotation.origin,
+            rotation.flip_x,
+            rotation.flip_y,
+        )),
+    }
+}
+
+fn apply_composed_parent(
+    composed: &[Option<ComposedDeformer>],
+    parent_index: i32,
+    point: Vector2,
+) -> Option<Vector2> {
+    if parent_index < 0 {
+        return Some(point);
+    }
+    let index = usize::try_from(parent_index).ok()?;
+    let parent = composed.get(index)?.as_ref()?;
+    apply_one(parent, point)
+}
+
+fn parent_scale_accum(composed: &[Option<ComposedDeformer>], parent_index: i32) -> f32 {
+    if parent_index < 0 {
+        return 1.0;
+    }
+    let index = match usize::try_from(parent_index) {
+        Ok(value) => value,
+        Err(_) => return 1.0,
+    };
+    match composed.get(index).and_then(|slot| slot.as_ref()) {
+        Some(ComposedDeformer::Warp(warp)) => warp.scale_accum,
+        Some(ComposedDeformer::Rotation(rotation)) => rotation.scale_accum,
+        None => 1.0,
+    }
 }
 
 impl Moc3KeyformBindings {
@@ -421,129 +511,84 @@ impl Moc3Deformers {
         })
     }
 
-    fn transform_vertices(
-        &self,
-        parent_deformer_index: i32,
-        vertices: &mut [Vector2],
-        bindings: &Moc3KeyformBindings,
-    ) -> Option<()> {
-        let mut deformer_index = parent_deformer_index;
-        let mut guard = 0usize;
-        let mut rotation_anchor = Vector2::default();
-        let mut has_rotation_anchor = false;
+    fn compose(&self, bindings: &Moc3KeyformBindings) -> Option<ComposedDeformers> {
+        let count = self.deformer_kinds.len();
+        let mut order: Vec<usize> = (0..count).collect();
+        order.sort_by_key(|&idx| self.deformer_depth(idx));
 
-        while deformer_index >= 0 {
-            let index = usize::try_from(deformer_index).ok()?;
-            match *self.deformer_kinds.get(index)? {
+        let mut composed: Vec<Option<ComposedDeformer>> = vec![None; count];
+        for idx in order {
+            let parent = *self.parent_deformer_indices.get(idx)?;
+            let specific = usize::try_from(*self.specific_indices.get(idx)?).ok()?;
+            let composed_deformer = match *self.deformer_kinds.get(idx)? {
                 Moc3DeformerKind::Warp => {
-                    let warp_index = usize::try_from(*self.specific_indices.get(index)?).ok()?;
-                    self.transform_warp(
-                        warp_index,
-                        vertices,
-                        bindings,
-                        has_rotation_anchor.then_some(&mut rotation_anchor),
-                    )?;
+                    let mut grid = self.interpolated_warp_grid(specific, bindings)?;
+                    let cols = usize::try_from(*self.warp_cols.get(specific)?).ok()?;
+                    let rows = usize::try_from(*self.warp_rows.get(specific)?).ok()?;
+                    for point in &mut grid {
+                        *point = apply_composed_parent(&composed, parent, *point)?;
+                    }
+                    let scale_accum = parent_scale_accum(&composed, parent);
+                    ComposedDeformer::Warp(ComposedWarp {
+                        grid,
+                        cols,
+                        rows,
+                        scale_accum,
+                    })
                 }
                 Moc3DeformerKind::Rotation => {
-                    let rotation_index =
-                        usize::try_from(*self.specific_indices.get(index)?).ok()?;
-                    self.transform_rotation(rotation_index, vertices, bindings)?;
-                    rotation_anchor = self.rotation_anchor(rotation_index, bindings)?;
-                    has_rotation_anchor = true;
+                    let rotation = self.interpolated_rotation(specific, bindings)?;
+                    let origin = apply_composed_parent(&composed, parent, rotation.translation)?;
+                    let stepped = apply_composed_parent(
+                        &composed,
+                        parent,
+                        Vector2::new(
+                            rotation.translation.x() + ROTATION_DERIVATIVE_STEP,
+                            rotation.translation.y(),
+                        ),
+                    )?;
+                    let parent_angle = (stepped.y() - origin.y()).atan2(stepped.x() - origin.x());
+                    let scale_accum = parent_scale_accum(&composed, parent);
+                    ComposedDeformer::Rotation(ComposedRotation {
+                        origin,
+                        angle_degrees: rotation.angle_degrees + parent_angle.to_degrees(),
+                        scale: rotation.scale * scale_accum,
+                        flip_x: rotation.flip_x,
+                        flip_y: rotation.flip_y,
+                        scale_accum: rotation.scale * scale_accum,
+                    })
                 }
+            };
+            *composed.get_mut(idx)? = Some(composed_deformer);
+        }
+
+        Some(ComposedDeformers {
+            deformers: composed.into_iter().collect::<Option<Vec<_>>>()?,
+        })
+    }
+
+    fn deformer_depth(&self, index: usize) -> usize {
+        let mut depth = 0usize;
+        let mut current = index;
+        loop {
+            let parent = self
+                .parent_deformer_indices
+                .get(current)
+                .copied()
+                .unwrap_or(-1);
+            if parent < 0 {
+                break;
             }
-
-            deformer_index = *self.parent_deformer_indices.get(index)?;
-            guard += 1;
-            if guard > self.parent_deformer_indices.len() {
-                return None;
+            current = match usize::try_from(parent) {
+                Ok(value) => value,
+                Err(_) => break,
+            };
+            depth += 1;
+            if depth > self.parent_deformer_indices.len() {
+                break;
             }
         }
-
-        Some(())
-    }
-
-    fn transform_warp(
-        &self,
-        warp_index: usize,
-        vertices: &mut [Vector2],
-        bindings: &Moc3KeyformBindings,
-        mut rotation_anchor: Option<&mut Vector2>,
-    ) -> Option<()> {
-        let grid = self.interpolated_warp_grid(warp_index, bindings)?;
-        let cols = usize::try_from(*self.warp_cols.get(warp_index)?).ok()?;
-        let rows = usize::try_from(*self.warp_rows.get(warp_index)?).ok()?;
-        let bounds = if rotation_anchor.is_some() {
-            Some(grid_bounds(&grid)?)
-        } else {
-            None
-        };
-        let transformed_anchor = match rotation_anchor.as_ref() {
-            Some(anchor) => Some(warp_deformer_transform_target(
-                **anchor,
-                &grid,
-                cols,
-                rows,
-                WarpInterpolation::Quad,
-            )?),
-            None => None,
-        };
-
-        for vertex in &mut *vertices {
-            *vertex = warp_deformer_transform_target(
-                *vertex,
-                &grid,
-                cols,
-                rows,
-                WarpInterpolation::Quad,
-            )?;
-        }
-
-        if let Some(anchor) = rotation_anchor.as_mut() {
-            let transformed_anchor = transformed_anchor?;
-            correct_vertices_around_anchor(vertices, transformed_anchor, bounds?)?;
-            **anchor = transformed_anchor;
-        }
-
-        Some(())
-    }
-
-    fn transform_rotation(
-        &self,
-        rotation_index: usize,
-        vertices: &mut [Vector2],
-        bindings: &Moc3KeyformBindings,
-    ) -> Option<()> {
-        let rotation = self.interpolated_rotation(rotation_index, bindings)?;
-
-        for vertex in vertices {
-            *vertex = rotation_deformer_transform_point(
-                *vertex,
-                rotation.angle_degrees,
-                rotation.scale,
-                rotation.translation,
-                rotation.flip_x,
-                rotation.flip_y,
-            );
-        }
-
-        Some(())
-    }
-
-    fn rotation_anchor(
-        &self,
-        rotation_index: usize,
-        bindings: &Moc3KeyformBindings,
-    ) -> Option<Vector2> {
-        let rotation = self.interpolated_rotation(rotation_index, bindings)?;
-        Some(rotation_deformer_transform_point(
-            Vector2::default(),
-            rotation.angle_degrees,
-            rotation.scale,
-            rotation.translation,
-            rotation.flip_x,
-            rotation.flip_y,
-        ))
+        depth
     }
 
     fn warp_keyform_slots(
@@ -667,12 +712,13 @@ pub fn build_moc3_drawable_meshes_for_default_pose(
     deformers: &Moc3Deformers,
     bindings: &Moc3KeyformBindings,
 ) -> Option<Vec<Moc3DrawableMesh>> {
+    let composed = deformers.compose(bindings)?;
     let mut meshes = Vec::with_capacity(art_meshes.meshes().len());
     for art_mesh_index in 0..art_meshes.meshes().len() {
         meshes.push(build_moc3_drawable_mesh_for_default_pose(
             art_meshes,
             art_mesh_keyforms,
-            deformers,
+            &composed,
             bindings,
             art_mesh_index,
         )?);
@@ -706,7 +752,7 @@ pub fn build_moc3_drawable_meshes_for_default_pose_with_offscreen_state(
 fn build_moc3_drawable_mesh_for_default_pose(
     art_meshes: &Moc3ArtMeshes,
     art_mesh_keyforms: &Moc3ArtMeshKeyforms,
-    deformers: &Moc3Deformers,
+    composed: &ComposedDeformers,
     bindings: &Moc3KeyformBindings,
     art_mesh_index: usize,
 ) -> Option<Moc3DrawableMesh> {
@@ -726,10 +772,9 @@ fn build_moc3_drawable_mesh_for_default_pose(
     let draw_order = interpolate_art_mesh_draw_order(art_mesh_keyforms, art_mesh_index, &slots)?;
     let mut positions = interpolate_art_mesh_positions(art_mesh_keyforms, art_mesh_index, &slots)?;
 
-    deformers.transform_vertices(
+    composed.transform_vertices(
         art_meshes.art_mesh_parent_deformer_index(art_mesh_index)?,
         &mut positions,
-        bindings,
     )?;
 
     let vertices = mesh
@@ -892,40 +937,4 @@ fn expand_keyform_slots(
 
 fn interpolate_bool(value: f32) -> bool {
     (value + 0.001).trunc() != 0.0
-}
-
-fn grid_bounds(grid: &[Vector2]) -> Option<DeformerBounds> {
-    let first = *grid.first()?;
-    let mut bounds = DeformerBounds {
-        min: first,
-        max: first,
-    };
-
-    for &point in &grid[1..] {
-        bounds.min = Vector2::new(bounds.min.x().min(point.x()), bounds.min.y().min(point.y()));
-        bounds.max = Vector2::new(bounds.max.x().max(point.x()), bounds.max.y().max(point.y()));
-    }
-
-    Some(bounds)
-}
-
-fn correct_vertices_around_anchor(
-    vertices: &mut [Vector2],
-    anchor: Vector2,
-    bounds: DeformerBounds,
-) -> Option<()> {
-    let width = bounds.max.x() - bounds.min.x();
-    let height = bounds.max.y() - bounds.min.y();
-    if width.abs() <= f32::EPSILON || height.abs() <= f32::EPSILON {
-        return None;
-    }
-
-    for vertex in vertices {
-        *vertex = Vector2::new(
-            anchor.x() + (vertex.x() - anchor.x()) / width,
-            anchor.y() + (vertex.y() - anchor.y()) / height,
-        );
-    }
-
-    Some(())
 }
