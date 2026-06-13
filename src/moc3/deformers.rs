@@ -249,7 +249,11 @@ impl Moc3Deformers {
         })
     }
 
-    pub(super) fn compose(&self, bindings: &Moc3KeyformBindings) -> Option<ComposedDeformers> {
+    pub(super) fn compose(
+        &self,
+        bindings: &Moc3KeyformBindings,
+        parameter_values: &[f32],
+    ) -> Option<ComposedDeformers> {
         let count = self.deformer_kinds.len();
         let mut order: Vec<usize> = (0..count).collect();
         order.sort_by_key(|&idx| self.deformer_depth(idx));
@@ -260,7 +264,7 @@ impl Moc3Deformers {
             let specific = usize::try_from(*self.specific_indices.get(idx)?).ok()?;
             let composed_deformer = match *self.deformer_kinds.get(idx)? {
                 Moc3DeformerKind::Warp => {
-                    let mut grid = self.interpolated_warp_grid(specific, bindings)?;
+                    let mut grid = self.interpolated_warp_grid(specific, bindings, parameter_values)?;
                     let cols = usize::try_from(*self.warp_cols.get(specific)?).ok()?;
                     let rows = usize::try_from(*self.warp_rows.get(specific)?).ok()?;
                     for point in &mut grid {
@@ -275,7 +279,7 @@ impl Moc3Deformers {
                     })
                 }
                 Moc3DeformerKind::Rotation => {
-                    let rotation = self.interpolated_rotation(specific, bindings)?;
+                    let rotation = self.interpolated_rotation(specific, bindings, parameter_values)?;
                     let origin = apply_composed_parent(&composed, parent, rotation.translation)?;
                     let stepped = apply_composed_parent(
                         &composed,
@@ -333,11 +337,13 @@ impl Moc3Deformers {
         &self,
         warp_index: usize,
         bindings: &Moc3KeyformBindings,
+        parameter_values: &[f32],
     ) -> Option<Vec<Moc3KeyformSlot>> {
         let keyform_count = usize::try_from(*self.warp_keyform_counts.get(warp_index)?).ok()?;
-        bindings.default_keyform_slots(
+        bindings.keyform_slots(
             *self.warp_keyform_binding_band_indices.get(warp_index)?,
             keyform_count,
+            parameter_values,
         )
     }
 
@@ -345,14 +351,16 @@ impl Moc3Deformers {
         &self,
         rotation_index: usize,
         bindings: &Moc3KeyformBindings,
+        parameter_values: &[f32],
     ) -> Option<Vec<Moc3KeyformSlot>> {
         let keyform_count =
             usize::try_from(*self.rotation_keyform_counts.get(rotation_index)?).ok()?;
-        bindings.default_keyform_slots(
+        bindings.keyform_slots(
             *self
                 .rotation_keyform_binding_band_indices
                 .get(rotation_index)?,
             keyform_count,
+            parameter_values,
         )
     }
 
@@ -360,8 +368,9 @@ impl Moc3Deformers {
         &self,
         warp_index: usize,
         bindings: &Moc3KeyformBindings,
+        parameter_values: &[f32],
     ) -> Option<Vec<Vector2>> {
-        let slots = self.warp_keyform_slots(warp_index, bindings)?;
+        let slots = self.warp_keyform_slots(warp_index, bindings, parameter_values)?;
         let begin = usize::try_from(*self.warp_keyform_begin_indices.get(warp_index)?).ok()?;
         let vertex_count = usize::try_from(*self.warp_vertex_counts.get(warp_index)?).ok()?;
         let mut grid = vec![Vector2::default(); vertex_count];
@@ -387,8 +396,9 @@ impl Moc3Deformers {
         &self,
         rotation_index: usize,
         bindings: &Moc3KeyformBindings,
+        parameter_values: &[f32],
     ) -> Option<InterpolatedRotation> {
-        let slots = self.rotation_keyform_slots(rotation_index, bindings)?;
+        let slots = self.rotation_keyform_slots(rotation_index, bindings, parameter_values)?;
         let begin =
             usize::try_from(*self.rotation_keyform_begin_indices.get(rotation_index)?).ok()?;
         let mut angle = 0.0f32;

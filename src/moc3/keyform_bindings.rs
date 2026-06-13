@@ -8,6 +8,8 @@ use super::{
     parse::{read_f32_section, read_i32_section, to_usize},
 };
 
+const PARAMETER_MAX_VALUES_SLOT: usize = 51;
+const PARAMETER_MIN_VALUES_SLOT: usize = 52;
 const PARAMETER_DEFAULT_VALUES_SLOT: usize = 53;
 const KEYFORM_BINDING_INDICES_SLOT: usize = 72;
 const KEYFORM_BINDING_BAND_BEGIN_INDICES_SLOT: usize = 73;
@@ -18,6 +20,8 @@ const KEY_VALUES_SLOT: usize = 77;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Moc3KeyformBindings {
+    parameter_min_values: Vec<f32>,
+    parameter_max_values: Vec<f32>,
     parameter_default_values: Vec<f32>,
     keyform_binding_indices: Vec<i32>,
     band_begin_indices: Vec<i32>,
@@ -39,13 +43,28 @@ impl Moc3KeyformBindings {
         let offsets = Moc3SectionOffsets::parse(bytes)?;
         let counts = Moc3CountInfo::parse(bytes)?;
         let endianness = header.endianness();
+        let parameter_count = to_usize(counts.parameters(), "parameter count")?;
 
         Ok(Self {
+            parameter_min_values: read_f32_section(
+                bytes,
+                &offsets,
+                PARAMETER_MIN_VALUES_SLOT,
+                parameter_count,
+                endianness,
+            )?,
+            parameter_max_values: read_f32_section(
+                bytes,
+                &offsets,
+                PARAMETER_MAX_VALUES_SLOT,
+                parameter_count,
+                endianness,
+            )?,
             parameter_default_values: read_f32_section(
                 bytes,
                 &offsets,
                 PARAMETER_DEFAULT_VALUES_SLOT,
-                to_usize(counts.parameters(), "parameter count")?,
+                parameter_count,
                 endianness,
             )?,
             keyform_binding_indices: read_i32_section(
@@ -96,17 +115,30 @@ impl Moc3KeyformBindings {
         })
     }
 
+    pub fn parameter_default_values(&self) -> &[f32] {
+        &self.parameter_default_values
+    }
+
+    pub fn parameter_min_values(&self) -> &[f32] {
+        &self.parameter_min_values
+    }
+
+    pub fn parameter_max_values(&self) -> &[f32] {
+        &self.parameter_max_values
+    }
+
     pub fn default_keyform_index(&self, band_index: i32, keyform_count: usize) -> Option<usize> {
-        self.default_keyform_slots(band_index, keyform_count)?
+        self.keyform_slots(band_index, keyform_count, &self.parameter_default_values)?
             .into_iter()
             .max_by(|left, right| left.weight.total_cmp(&right.weight))
             .map(|slot| slot.local_index)
     }
 
-    pub(super) fn default_keyform_slots(
+    pub(super) fn keyform_slots(
         &self,
         band_index: i32,
         keyform_count: usize,
+        parameter_values: &[f32],
     ) -> Option<Vec<Moc3KeyformSlot>> {
         if keyform_count == 0 {
             return None;
@@ -132,12 +164,11 @@ impl Moc3KeyformBindings {
         for &binding_index in bindings {
             let binding_index = usize::try_from(binding_index).ok()?;
             let keys = self.binding_keys(binding_index)?;
-            let parameter_default = self
-                .parameter_default_values
+            let parameter_value = parameter_values
                 .get(binding_index)
                 .copied()
                 .unwrap_or(0.0);
-            let interval = compute_keyform_axis_interval(keys, parameter_default)?;
+            let interval = compute_keyform_axis_interval(keys, parameter_value)?;
             let active_index = interval.left_index() + usize::from(interval.t() != 0.0);
             if active_index >= keys.len() {
                 return None;

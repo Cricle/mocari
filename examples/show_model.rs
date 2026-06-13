@@ -1,8 +1,17 @@
-use std::{error::Error, fmt, sync::Arc};
+use std::{
+    error::Error,
+    fmt,
+    path::PathBuf,
+    sync::Arc,
+    time::Instant,
+};
 
+use ab_glyph::{Font, FontArc, Glyph, ScaleFont, point};
 use rusty_live2d::{
-    assets::{DecodedTexture, load_model},
+    ModelRuntime, MotionPlayer,
+    assets::{DecodedTexture, load_model_runtime},
     core::Matrix44,
+    motion::load_motion,
     moc3::{Moc3DrawableMesh, Moc3DrawableVertex},
     render::wgpu::{
         WgpuClippingPlan, WgpuClippingResources, WgpuLive2dRenderer, WgpuMaskRenderTarget,
@@ -21,11 +30,14 @@ const WINDOW_WIDTH: u32 = 900;
 const WINDOW_HEIGHT: u32 = 900;
 const MASK_TEXTURE_SIZE: u32 = 256;
 const MODEL_VIEW_FILL: f32 = 1.85;
-const SWITCH_BUTTON_X: f64 = 16.0;
+const BUTTON_X: f64 = 16.0;
 const SWITCH_BUTTON_Y: f64 = 16.0;
-const SWITCH_BUTTON_WIDTH: f64 = 148.0;
-const SWITCH_BUTTON_HEIGHT: f64 = 42.0;
-const SWITCH_BUTTON_RGBA: &[u8] = &[46, 65, 78, 220];
+const MOTION_BUTTON_Y: f64 = 70.0;
+const BUTTON_WIDTH: f64 = 168.0;
+const BUTTON_HEIGHT: f64 = 42.0;
+const BUTTON_RGBA: &[u8] = &[46, 65, 78, 235];
+const TEXT_HEIGHT_PX: f32 = 22.0;
+const TEXT_RGBA: [u8; 4] = [232, 238, 242, 255];
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct ModelSpec {
@@ -142,13 +154,18 @@ impl ApplicationHandler for ShowModelApp {
                 button,
                 ..
             } => {
-                if button_state == ElementState::Pressed
-                    && button == MouseButton::Left
-                    && state.switch_button_hit()
-                    && let Err(error) = state.switch_to_next_model()
-                {
-                    eprintln!("model switch failed: {error}");
-                    event_loop.exit();
+                if button_state == ElementState::Pressed && button == MouseButton::Left {
+                    let result = if state.button_hit(SWITCH_BUTTON_Y) {
+                        state.switch_to_next_model()
+                    } else if state.button_hit(MOTION_BUTTON_Y) {
+                        state.play_random_motion()
+                    } else {
+                        Ok(())
+                    };
+                    if let Err(error) = result {
+                        eprintln!("button action failed: {error}");
+                        event_loop.exit();
+                    }
                 }
             }
             WindowEvent::RedrawRequested => {
@@ -175,21 +192,35 @@ struct WindowState {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     renderer: WgpuLive2dRenderer,
+    font: FontArc,
     model_index: usize,
     model: LoadedModel,
     button_buffers: WgpuMeshBuffers,
     button_texture: WgpuTexture,
-    button_transform: WgpuTransform,
+    switch_transform: WgpuTransform,
+    motion_transform: WgpuTransform,
+    switch_label: LabelQuad,
+    motion_label: LabelQuad,
     cursor_position: Option<PhysicalPosition<f64>>,
+    last_frame: Instant,
+    rng: u64,
 }
 
 struct LoadedModel {
+    runtime: ModelRuntime,
+    motions: Vec<PathBuf>,
+    player: Option<MotionPlayer>,
     mesh_buffers: WgpuMeshBuffers,
     textures: Vec<WgpuTexture>,
     clipping_resources: WgpuClippingResources,
     mask_target: WgpuMaskRenderTarget,
     transform: WgpuTransform,
     model_bounds: ModelBounds,
+}
+
+struct LabelQuad {
+    buffers: WgpuMeshBuffers,
+    texture: WgpuTexture,
 }
 
 impl WindowState {
@@ -222,13 +253,19 @@ impl WindowState {
         surface.configure(&device, &config);
 
         let renderer = WgpuLive2dRenderer::new(&device, config.format);
+        let font = load_font()?;
         let model_index = 0;
         let model =
             load_rendered_model(&renderer, &device, &queue, MODEL_SPECS[model_index], size)?;
-        let button_buffers = create_switch_button_buffers(&device, size)?;
-        let button_texture =
-            renderer.create_rgba8_texture(&device, &queue, 1, 1, SWITCH_BUTTON_RGBA)?;
-        let button_transform = renderer.create_transform(&device, &Matrix44::identity());
+        let button_buffers = create_button_quad_buffers(&device, size, SWITCH_BUTTON_Y)?;
+        let button_texture = renderer.create_rgba8_texture(&device, &queue, 1, 1, BUTTON_RGBA)?;
+        let switch_transform = renderer.create_transform(&device, &Matrix44::identity());
+        let motion_transform =
+            renderer.create_transform(&device, &button_offset_matrix(size, MOTION_BUTTON_Y));
+        let switch_label =
+            create_label_quad(&renderer, &device, &queue, &font, "Switch Model", size, SWITCH_BUTTON_Y)?;
+        let motion_label =
+            create_label_quad(&renderer, &device, &queue, &font, "Play Motion", size, MOTION_BUTTON_Y)?;
         window.set_title(&window_title(MODEL_SPECS[model_index]));
 
         Ok(Self {
@@ -238,12 +275,18 @@ impl WindowState {
             queue,
             config,
             renderer,
+            font,
             model_index,
             model,
             button_buffers,
             button_texture,
-            button_transform,
+            switch_transform,
+            motion_transform,
+            switch_label,
+            motion_label,
             cursor_position: None,
+            last_frame: Instant::now(),
+            rng: 0x9e37_79b9_7f4a_7c15,
         })
     }
 
@@ -259,14 +302,79 @@ impl WindowState {
             &self.device,
             &fit_model_matrix(self.model.model_bounds, size),
         );
-        self.button_buffers = create_switch_button_buffers(&self.device, size)?;
+        self.button_buffers = create_button_quad_buffers(&self.device, size, SWITCH_BUTTON_Y)?;
+        self.motion_transform = self
+            .renderer
+            .create_transform(&self.device, &button_offset_matrix(size, MOTION_BUTTON_Y));
+        self.switch_label = create_label_quad(
+            &self.renderer,
+            &self.device,
+            &self.queue,
+            &self.font,
+            "Switch Model",
+            size,
+            SWITCH_BUTTON_Y,
+        )?;
+        self.motion_label = create_label_quad(
+            &self.renderer,
+            &self.device,
+            &self.queue,
+            &self.font,
+            "Play Motion",
+            size,
+            MOTION_BUTTON_Y,
+        )?;
         Ok(())
     }
 
-    fn switch_button_hit(&self) -> bool {
+    fn button_hit(&self, top: f64) -> bool {
         self.cursor_position
-            .map(|position| switch_button_rect().contains(position.x, position.y))
+            .map(|position| button_rect(top).contains(position.x, position.y))
             .unwrap_or(false)
+    }
+
+    fn play_random_motion(&mut self) -> Result<(), Box<dyn Error>> {
+        if self.model.motions.is_empty() {
+            return Ok(());
+        }
+        let pick = (self.next_rng() % self.model.motions.len() as u64) as usize;
+        let motion = load_motion(&self.model.motions[pick])?;
+        self.model.player = Some(MotionPlayer::new(motion));
+        self.last_frame = Instant::now();
+        self.window.request_redraw();
+        Ok(())
+    }
+
+    fn next_rng(&mut self) -> u64 {
+        self.rng ^= self.rng << 13;
+        self.rng ^= self.rng >> 7;
+        self.rng ^= self.rng << 17;
+        self.rng
+    }
+
+    fn advance_motion(&mut self) -> Result<(), Box<dyn Error>> {
+        let now = Instant::now();
+        let delta = now.duration_since(self.last_frame).as_secs_f32();
+        self.last_frame = now;
+
+        let Some(player) = self.model.player.as_mut() else {
+            return Ok(());
+        };
+        player.tick(delta);
+        self.model.runtime.reset_parameters();
+        player.apply(&mut self.model.runtime);
+        if player.is_finished() {
+            self.model.player = None;
+        }
+        if self.model.runtime.update_meshes().is_none() {
+            return Err(Box::new(ExampleError("failed to rebuild model meshes")));
+        }
+        rebuild_model_gpu(
+            &self.renderer,
+            &self.device,
+            &mut self.model,
+        )?;
+        Ok(())
     }
 
     fn switch_to_next_model(&mut self) -> Result<(), Box<dyn Error>> {
@@ -290,6 +398,8 @@ impl WindowState {
     }
 
     fn render(&mut self) -> Result<(), Box<dyn Error>> {
+        self.advance_motion()?;
+
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame)
             | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
@@ -375,7 +485,25 @@ impl WindowState {
                 &mut pass,
                 &self.button_buffers,
                 std::slice::from_ref(&self.button_texture),
-                &self.button_transform,
+                &self.switch_transform,
+            )?;
+            self.renderer.draw_with_textures_and_transform(
+                &mut pass,
+                &self.button_buffers,
+                std::slice::from_ref(&self.button_texture),
+                &self.motion_transform,
+            )?;
+            self.renderer.draw_with_textures_and_transform(
+                &mut pass,
+                &self.switch_label.buffers,
+                std::slice::from_ref(&self.switch_label.texture),
+                &self.switch_transform,
+            )?;
+            self.renderer.draw_with_textures_and_transform(
+                &mut pass,
+                &self.motion_label.buffers,
+                std::slice::from_ref(&self.motion_label.texture),
+                &self.switch_transform,
             )?;
         }
 
@@ -405,28 +533,147 @@ fn load_rendered_model(
     spec: ModelSpec,
     surface_size: PhysicalSize<u32>,
 ) -> Result<LoadedModel, Box<dyn Error>> {
-    let model = load_model(spec.path)?;
-    let model_bounds = ModelBounds::from_drawables(model.meshes())
+    let loaded = load_model_runtime(spec.path)?;
+    let runtime = loaded.runtime().clone();
+    let model_bounds = ModelBounds::from_drawables(runtime.meshes())
         .ok_or(ExampleError("model has no drawable bounds"))?;
-    let mesh_buffers = WgpuMeshBuffers::from_drawables(device, model.meshes())
-        .ok_or(ExampleError("failed to create mesh buffers"))?;
-    let textures = create_textures(renderer, device, queue, model.textures())?;
+    let textures = create_textures(renderer, device, queue, loaded.textures())?;
+    let motions = motion_paths(&runtime, loaded.model_dir());
 
+    let mut model = LoadedModel {
+        runtime,
+        motions,
+        player: None,
+        mesh_buffers: WgpuMeshBuffers::from_drawables(device, &[])
+            .ok_or(ExampleError("failed to create mesh buffers"))?,
+        textures,
+        clipping_resources: renderer
+            .create_clipping_resources(device, &WgpuClippingPlan::from_mesh_buffers(
+                &WgpuMeshBuffers::from_drawables(device, &[])
+                    .ok_or(ExampleError("failed to create mesh buffers"))?,
+            ))?,
+        mask_target: renderer.create_mask_render_target(device, MASK_TEXTURE_SIZE)?,
+        transform: renderer.create_transform(device, &fit_model_matrix(model_bounds, surface_size)),
+        model_bounds,
+    };
+    rebuild_model_gpu(renderer, device, &mut model)?;
+    Ok(model)
+}
+
+fn rebuild_model_gpu(
+    renderer: &WgpuLive2dRenderer,
+    device: &wgpu::Device,
+    model: &mut LoadedModel,
+) -> Result<(), Box<dyn Error>> {
+    let mesh_buffers = WgpuMeshBuffers::from_drawables(device, model.runtime.meshes())
+        .ok_or(ExampleError("failed to create mesh buffers"))?;
     let mut clipping_plan = WgpuClippingPlan::from_mesh_buffers(&mesh_buffers);
     clipping_plan.prepare_single_texture_masks(&mesh_buffers)?;
-    let clipping_resources = renderer.create_clipping_resources(device, &clipping_plan)?;
-    let mask_target = renderer.create_mask_render_target(device, MASK_TEXTURE_SIZE)?;
-    let transform =
-        renderer.create_transform(device, &fit_model_matrix(model_bounds, surface_size));
+    model.clipping_resources = renderer.create_clipping_resources(device, &clipping_plan)?;
+    model.mesh_buffers = mesh_buffers;
+    Ok(())
+}
 
-    Ok(LoadedModel {
-        mesh_buffers,
-        textures,
-        clipping_resources,
-        mask_target,
-        transform,
-        model_bounds,
-    })
+fn motion_paths(runtime: &ModelRuntime, model_dir: Option<&std::path::Path>) -> Vec<PathBuf> {
+    let Some(model_dir) = model_dir else {
+        return Vec::new();
+    };
+    runtime
+        .model()
+        .motions()
+        .values()
+        .flatten()
+        .map(|reference| model_dir.join(reference.file()))
+        .collect()
+}
+
+fn load_font() -> Result<FontArc, Box<dyn Error>> {
+    const CANDIDATES: &[&str] = &[
+        "C:/Windows/Fonts/segoeui.ttf",
+        "C:/Windows/Fonts/arial.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    ];
+    for path in CANDIDATES {
+        if let Ok(bytes) = std::fs::read(path) {
+            if let Ok(font) = FontArc::try_from_vec(bytes) {
+                return Ok(font);
+            }
+        }
+    }
+    Err(Box::new(ExampleError("no usable system font found")))
+}
+
+fn create_label_quad(
+    renderer: &WgpuLive2dRenderer,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    font: &FontArc,
+    text: &str,
+    surface_size: PhysicalSize<u32>,
+    top: f64,
+) -> Result<LabelQuad, Box<dyn Error>> {
+    let (width, height, rgba) = rasterize_text(font, text);
+    let texture = renderer.create_rgba8_texture(device, queue, width, height, &rgba)?;
+
+    let pad_x = BUTTON_X + 14.0;
+    let pad_y = top + (BUTTON_HEIGHT - f64::from(height)) * 0.5;
+    let mesh = textured_quad_mesh(
+        surface_size,
+        pad_x,
+        pad_y,
+        f64::from(width),
+        f64::from(height),
+    )
+    .ok_or(ExampleError("invalid label size"))?;
+    let buffers = WgpuMeshBuffers::from_drawables(device, &[mesh])
+        .ok_or(ExampleError("failed to create label buffers"))?;
+
+    Ok(LabelQuad { buffers, texture })
+}
+
+fn rasterize_text(font: &FontArc, text: &str) -> (u32, u32, Vec<u8>) {
+    let scale = TEXT_HEIGHT_PX;
+    let ascent = font.as_scaled(scale).ascent();
+    let mut pen_x = 2.0f32;
+    let baseline = ascent + 2.0;
+    let mut placed: Vec<Glyph> = Vec::new();
+
+    for character in text.chars() {
+        let glyph = font
+            .glyph_id(character)
+            .with_scale_and_position(scale, point(pen_x, baseline));
+        pen_x += font.as_scaled(scale).h_advance(glyph.id);
+        placed.push(glyph);
+    }
+
+    let width = (pen_x.ceil() as u32 + 2).max(1);
+    let height = (TEXT_HEIGHT_PX.ceil() as u32 + 6).max(1);
+    let mut rgba = vec![0u8; (width * height * 4) as usize];
+
+    for glyph in placed {
+        if let Some(outlined) = font.outline_glyph(glyph) {
+            let bounds = outlined.px_bounds();
+            outlined.draw(|x, y, coverage| {
+                let px = x as i32 + bounds.min.x as i32;
+                let py = y as i32 + bounds.min.y as i32;
+                if px < 0 || py < 0 || px as u32 >= width || py as u32 >= height {
+                    return;
+                }
+                let index = ((py as u32 * width + px as u32) * 4) as usize;
+                let alpha = (coverage * 255.0) as u8;
+                if alpha > rgba[index + 3] {
+                    rgba[index] = TEXT_RGBA[0];
+                    rgba[index + 1] = TEXT_RGBA[1];
+                    rgba[index + 2] = TEXT_RGBA[2];
+                    rgba[index + 3] = alpha;
+                }
+            });
+        }
+    }
+
+    (width, height, rgba)
 }
 
 fn create_textures(
@@ -465,40 +712,53 @@ impl ButtonRect {
     }
 }
 
-fn switch_button_rect() -> ButtonRect {
+fn button_rect(top: f64) -> ButtonRect {
     ButtonRect {
-        x: SWITCH_BUTTON_X,
-        y: SWITCH_BUTTON_Y,
-        width: SWITCH_BUTTON_WIDTH,
-        height: SWITCH_BUTTON_HEIGHT,
+        x: BUTTON_X,
+        y: top,
+        width: BUTTON_WIDTH,
+        height: BUTTON_HEIGHT,
     }
 }
 
-fn create_switch_button_buffers(
+fn create_button_quad_buffers(
     device: &wgpu::Device,
     surface_size: PhysicalSize<u32>,
+    top: f64,
 ) -> Result<WgpuMeshBuffers, Box<dyn Error>> {
-    let mesh =
-        switch_button_mesh(surface_size).ok_or(ExampleError("invalid switch button size"))?;
+    let mesh = textured_quad_mesh(surface_size, BUTTON_X, top, BUTTON_WIDTH, BUTTON_HEIGHT)
+        .ok_or(ExampleError("invalid button size"))?;
     WgpuMeshBuffers::from_drawables(device, &[mesh])
-        .ok_or_else(|| Box::new(ExampleError("failed to create switch button buffers")).into())
+        .ok_or_else(|| Box::new(ExampleError("failed to create button buffers")).into())
 }
 
-fn switch_button_mesh(surface_size: PhysicalSize<u32>) -> Option<Moc3DrawableMesh> {
+fn button_offset_matrix(surface_size: PhysicalSize<u32>, top: f64) -> Matrix44 {
+    let delta = (top - SWITCH_BUTTON_Y) / f64::from(surface_size.height.max(1)) * 2.0;
+    let mut matrix = Matrix44::identity();
+    matrix.translate(0.0, -delta as f32);
+    matrix
+}
+
+fn textured_quad_mesh(
+    surface_size: PhysicalSize<u32>,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Option<Moc3DrawableMesh> {
     if surface_size.width == 0 || surface_size.height == 0 {
         return None;
     }
 
-    let rect = switch_button_rect();
-    let right = (rect.x + rect.width).min(f64::from(surface_size.width));
-    let bottom = (rect.y + rect.height).min(f64::from(surface_size.height));
-    if right <= rect.x || bottom <= rect.y {
+    let right = (x + width).min(f64::from(surface_size.width));
+    let bottom = (y + height).min(f64::from(surface_size.height));
+    if right <= x || bottom <= y {
         return None;
     }
 
-    let left = pixel_x_to_ndc(rect.x, surface_size.width);
+    let left = pixel_x_to_ndc(x, surface_size.width);
     let right = pixel_x_to_ndc(right, surface_size.width);
-    let top = pixel_y_to_ndc(rect.y, surface_size.height);
+    let top = pixel_y_to_ndc(y, surface_size.height);
     let bottom = pixel_y_to_ndc(bottom, surface_size.height);
 
     Some(Moc3DrawableMesh::from_parts(
@@ -661,10 +921,10 @@ mod tests {
     #[test]
     fn model_specs_load_drawable_meshes() {
         for spec in MODEL_SPECS {
-            let model = load_model(spec.path).expect(spec.path);
+            let model = load_model_runtime(spec.path).expect(spec.path);
 
             assert!(
-                !model.meshes().is_empty(),
+                !model.runtime().meshes().is_empty(),
                 "model has no drawable meshes: {}",
                 spec.path
             );
@@ -684,13 +944,22 @@ mod tests {
     }
 
     #[test]
-    fn switch_button_hit_test_uses_top_left_rect() {
-        let rect = switch_button_rect();
+    fn button_hit_test_uses_top_left_rect() {
+        let rect = button_rect(SWITCH_BUTTON_Y);
 
         assert!(rect.contains(20.0, 20.0));
         assert!(rect.contains(rect.x + rect.width, rect.y + rect.height));
         assert!(!rect.contains(rect.x + rect.width + 1.0, rect.y));
         assert!(!rect.contains(rect.x, rect.y + rect.height + 1.0));
+    }
+
+    #[test]
+    fn motion_button_sits_below_switch_button() {
+        let switch = button_rect(SWITCH_BUTTON_Y);
+        let motion = button_rect(MOTION_BUTTON_Y);
+
+        assert!(motion.y > switch.y + switch.height - 0.0001);
+        assert_eq!(switch.x, motion.x);
     }
 
     fn assert_close(actual: f32, expected: f32) {

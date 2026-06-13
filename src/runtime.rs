@@ -1,0 +1,142 @@
+use std::collections::HashMap;
+
+use crate::{
+    core::clamp_parameter_value,
+    json::Model3,
+    moc3::{
+        Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3CanvasInfo, Moc3Deformers, Moc3DrawableMesh,
+        Moc3Ids, Moc3KeyformBindings, Moc3OffscreenInfo,
+        build_moc3_drawable_meshes_with_parameters_and_offscreen_state,
+    },
+};
+
+#[derive(Debug, Clone)]
+pub struct ModelRuntime {
+    model: Model3,
+    canvas: Moc3CanvasInfo,
+    art_meshes: Moc3ArtMeshes,
+    art_mesh_keyforms: Moc3ArtMeshKeyforms,
+    deformers: Moc3Deformers,
+    bindings: Moc3KeyformBindings,
+    ids: Moc3Ids,
+    offscreen: Moc3OffscreenInfo,
+    parameter_index: HashMap<String, usize>,
+    parameter_values: Vec<f32>,
+    meshes: Vec<Moc3DrawableMesh>,
+}
+
+impl ModelRuntime {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        model: Model3,
+        canvas: Moc3CanvasInfo,
+        art_meshes: Moc3ArtMeshes,
+        art_mesh_keyforms: Moc3ArtMeshKeyforms,
+        deformers: Moc3Deformers,
+        bindings: Moc3KeyformBindings,
+        ids: Moc3Ids,
+        offscreen: Moc3OffscreenInfo,
+    ) -> Option<Self> {
+        let parameter_values = bindings.parameter_default_values().to_vec();
+        let parameter_index = ids
+            .parameters()
+            .iter()
+            .enumerate()
+            .map(|(index, id)| (id.clone(), index))
+            .collect();
+
+        let mut runtime = Self {
+            model,
+            canvas,
+            art_meshes,
+            art_mesh_keyforms,
+            deformers,
+            bindings,
+            ids,
+            offscreen,
+            parameter_index,
+            parameter_values,
+            meshes: Vec::new(),
+        };
+        runtime.update_meshes()?;
+        Some(runtime)
+    }
+
+    pub fn model(&self) -> &Model3 {
+        &self.model
+    }
+
+    pub fn canvas(&self) -> Moc3CanvasInfo {
+        self.canvas
+    }
+
+    pub fn parameter_ids(&self) -> &[String] {
+        self.ids.parameters()
+    }
+
+    pub fn parameter_index(&self, id: &str) -> Option<usize> {
+        self.parameter_index.get(id).copied()
+    }
+
+    pub fn parameter_value(&self, id: &str) -> Option<f32> {
+        let index = self.parameter_index(id)?;
+        self.parameter_values.get(index).copied()
+    }
+
+    pub fn parameter_value_by_index(&self, index: usize) -> Option<f32> {
+        self.parameter_values.get(index).copied()
+    }
+
+    pub fn parameter_values(&self) -> &[f32] {
+        &self.parameter_values
+    }
+
+    pub fn set_parameter(&mut self, id: &str, value: f32) -> bool {
+        match self.parameter_index(id) {
+            Some(index) => self.set_parameter_by_index(index, value),
+            None => false,
+        }
+    }
+
+    pub fn set_parameter_by_index(&mut self, index: usize, value: f32) -> bool {
+        let Some(slot) = self.parameter_values.get_mut(index) else {
+            return false;
+        };
+        let minimum = self
+            .bindings
+            .parameter_min_values()
+            .get(index)
+            .copied()
+            .unwrap_or(f32::MIN);
+        let maximum = self
+            .bindings
+            .parameter_max_values()
+            .get(index)
+            .copied()
+            .unwrap_or(f32::MAX);
+        *slot = clamp_parameter_value(value, minimum, maximum);
+        true
+    }
+
+    pub fn reset_parameters(&mut self) {
+        self.parameter_values
+            .copy_from_slice(self.bindings.parameter_default_values());
+    }
+
+    pub fn update_meshes(&mut self) -> Option<()> {
+        self.meshes = build_moc3_drawable_meshes_with_parameters_and_offscreen_state(
+            &self.art_meshes,
+            &self.art_mesh_keyforms,
+            &self.deformers,
+            &self.bindings,
+            &self.ids,
+            &self.offscreen,
+            &self.parameter_values,
+        )?;
+        Some(())
+    }
+
+    pub fn meshes(&self) -> &[Moc3DrawableMesh] {
+        &self.meshes
+    }
+}

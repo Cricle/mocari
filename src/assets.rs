@@ -7,6 +7,7 @@ use crate::{
         Moc3Ids, Moc3KeyformBindings, Moc3OffscreenInfo,
         build_moc3_drawable_meshes_for_default_pose_with_offscreen_state,
     },
+    runtime::ModelRuntime,
 };
 
 #[derive(Debug, Clone)]
@@ -98,6 +99,86 @@ impl fmt::Display for AssetLoadError {
 impl std::error::Error for AssetLoadError {}
 
 pub fn load_model(path: impl AsRef<Path>) -> Result<DefaultModel, AssetLoadError> {
+    let parsed = parse_model(path)?;
+    let meshes = build_moc3_drawable_meshes_for_default_pose_with_offscreen_state(
+        &parsed.art_meshes,
+        &parsed.art_mesh_keyforms,
+        &parsed.deformers,
+        &parsed.bindings,
+        &parsed.ids,
+        &parsed.offscreen,
+    )
+    .ok_or(AssetLoadError::DrawableMeshes)?;
+
+    Ok(DefaultModel {
+        model: parsed.model,
+        canvas: parsed.canvas,
+        meshes,
+        textures: parsed.textures,
+    })
+}
+
+pub fn load_model_runtime(path: impl AsRef<Path>) -> Result<RuntimeModel, AssetLoadError> {
+    let path = path.as_ref();
+    let model_dir = path.parent().map(Path::to_path_buf);
+    let parsed = parse_model(path)?;
+    let runtime = ModelRuntime::new(
+        parsed.model,
+        parsed.canvas,
+        parsed.art_meshes,
+        parsed.art_mesh_keyforms,
+        parsed.deformers,
+        parsed.bindings,
+        parsed.ids,
+        parsed.offscreen,
+    )
+    .ok_or(AssetLoadError::DrawableMeshes)?;
+
+    Ok(RuntimeModel {
+        runtime,
+        textures: parsed.textures,
+        model_dir,
+    })
+}
+
+#[derive(Debug, Clone)]
+pub struct RuntimeModel {
+    runtime: ModelRuntime,
+    textures: Vec<DecodedTexture>,
+    model_dir: Option<std::path::PathBuf>,
+}
+
+impl RuntimeModel {
+    pub fn runtime(&self) -> &ModelRuntime {
+        &self.runtime
+    }
+
+    pub fn runtime_mut(&mut self) -> &mut ModelRuntime {
+        &mut self.runtime
+    }
+
+    pub fn textures(&self) -> &[DecodedTexture] {
+        &self.textures
+    }
+
+    pub fn model_dir(&self) -> Option<&Path> {
+        self.model_dir.as_deref()
+    }
+}
+
+struct ParsedModel {
+    model: Model3,
+    canvas: Moc3CanvasInfo,
+    art_meshes: Moc3ArtMeshes,
+    art_mesh_keyforms: Moc3ArtMeshKeyforms,
+    deformers: Moc3Deformers,
+    bindings: Moc3KeyformBindings,
+    ids: Moc3Ids,
+    offscreen: Moc3OffscreenInfo,
+    textures: Vec<DecodedTexture>,
+}
+
+fn parse_model(path: impl AsRef<Path>) -> Result<ParsedModel, AssetLoadError> {
     let path = path.as_ref();
     let model_source = read_text(path)?;
     let model = Model3::from_json_str(&model_source).map_err(AssetLoadError::Json)?;
@@ -108,31 +189,27 @@ pub fn load_model(path: impl AsRef<Path>) -> Result<DefaultModel, AssetLoadError
     let moc = read_bytes(&moc_path)?;
 
     let art_meshes = Moc3ArtMeshes::parse(&moc).map_err(AssetLoadError::Moc3)?;
-    let keyforms = Moc3ArtMeshKeyforms::parse(&moc).map_err(AssetLoadError::Moc3)?;
+    let art_mesh_keyforms = Moc3ArtMeshKeyforms::parse(&moc).map_err(AssetLoadError::Moc3)?;
     let deformers = Moc3Deformers::parse(&moc).map_err(AssetLoadError::Moc3)?;
     let bindings = Moc3KeyformBindings::parse(&moc).map_err(AssetLoadError::Moc3)?;
     let ids = Moc3Ids::parse(&moc).map_err(AssetLoadError::Moc3)?;
     let offscreen = Moc3OffscreenInfo::parse(&moc).map_err(AssetLoadError::Moc3)?;
     let canvas = Moc3CanvasInfo::parse(&moc).map_err(AssetLoadError::Moc3)?;
-    let meshes = build_moc3_drawable_meshes_for_default_pose_with_offscreen_state(
-        &art_meshes,
-        &keyforms,
-        &deformers,
-        &bindings,
-        &ids,
-        &offscreen,
-    )
-    .ok_or(AssetLoadError::DrawableMeshes)?;
     let textures = model
         .textures()
         .iter()
         .map(|texture| decode_texture(model_dir.join(texture)))
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(DefaultModel {
+    Ok(ParsedModel {
         model,
         canvas,
-        meshes,
+        art_meshes,
+        art_mesh_keyforms,
+        deformers,
+        bindings,
+        ids,
+        offscreen,
         textures,
     })
 }

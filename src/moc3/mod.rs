@@ -28,6 +28,8 @@ pub use keyforms::{Moc3ArtMeshKeyformInfo, Moc3ArtMeshKeyforms};
 pub use mesh_build::{
     build_moc3_drawable_meshes_for_default_pose,
     build_moc3_drawable_meshes_for_default_pose_with_offscreen_state,
+    build_moc3_drawable_meshes_with_parameters,
+    build_moc3_drawable_meshes_with_parameters_and_offscreen_state,
 };
 pub use offscreen::Moc3OffscreenInfo;
 pub use offsets::Moc3SectionOffsets;

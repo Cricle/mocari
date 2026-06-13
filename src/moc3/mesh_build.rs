@@ -12,14 +12,31 @@ pub fn build_moc3_drawable_meshes_for_default_pose(
     deformers: &Moc3Deformers,
     bindings: &Moc3KeyformBindings,
 ) -> Option<Vec<Moc3DrawableMesh>> {
-    let composed = deformers.compose(bindings)?;
+    build_moc3_drawable_meshes_with_parameters(
+        art_meshes,
+        art_mesh_keyforms,
+        deformers,
+        bindings,
+        bindings.parameter_default_values(),
+    )
+}
+
+pub fn build_moc3_drawable_meshes_with_parameters(
+    art_meshes: &Moc3ArtMeshes,
+    art_mesh_keyforms: &Moc3ArtMeshKeyforms,
+    deformers: &Moc3Deformers,
+    bindings: &Moc3KeyformBindings,
+    parameter_values: &[f32],
+) -> Option<Vec<Moc3DrawableMesh>> {
+    let composed = deformers.compose(bindings, parameter_values)?;
     let mut meshes = Vec::with_capacity(art_meshes.meshes().len());
     for art_mesh_index in 0..art_meshes.meshes().len() {
-        meshes.push(build_moc3_drawable_mesh_for_default_pose(
+        meshes.push(build_moc3_drawable_mesh_for_pose(
             art_meshes,
             art_mesh_keyforms,
             &composed,
             bindings,
+            parameter_values,
             art_mesh_index,
         )?);
     }
@@ -35,11 +52,32 @@ pub fn build_moc3_drawable_meshes_for_default_pose_with_offscreen_state(
     ids: &Moc3Ids,
     offscreen: &Moc3OffscreenInfo,
 ) -> Option<Vec<Moc3DrawableMesh>> {
-    let mut meshes = build_moc3_drawable_meshes_for_default_pose(
+    build_moc3_drawable_meshes_with_parameters_and_offscreen_state(
         art_meshes,
         art_mesh_keyforms,
         deformers,
         bindings,
+        ids,
+        offscreen,
+        bindings.parameter_default_values(),
+    )
+}
+
+pub fn build_moc3_drawable_meshes_with_parameters_and_offscreen_state(
+    art_meshes: &Moc3ArtMeshes,
+    art_mesh_keyforms: &Moc3ArtMeshKeyforms,
+    deformers: &Moc3Deformers,
+    bindings: &Moc3KeyformBindings,
+    ids: &Moc3Ids,
+    offscreen: &Moc3OffscreenInfo,
+    parameter_values: &[f32],
+) -> Option<Vec<Moc3DrawableMesh>> {
+    let mut meshes = build_moc3_drawable_meshes_with_parameters(
+        art_meshes,
+        art_mesh_keyforms,
+        deformers,
+        bindings,
+        parameter_values,
     )?;
 
     for drawable_index in offscreen.effect_source_drawable_indices(ids) {
@@ -49,17 +87,19 @@ pub fn build_moc3_drawable_meshes_for_default_pose_with_offscreen_state(
     Some(meshes)
 }
 
-fn build_moc3_drawable_mesh_for_default_pose(
+fn build_moc3_drawable_mesh_for_pose(
     art_meshes: &Moc3ArtMeshes,
     art_mesh_keyforms: &Moc3ArtMeshKeyforms,
     composed: &ComposedDeformers,
     bindings: &Moc3KeyformBindings,
+    parameter_values: &[f32],
     art_mesh_index: usize,
 ) -> Option<Moc3DrawableMesh> {
     let keyform_count = art_mesh_keyforms.art_mesh_keyforms(art_mesh_index)?.len();
-    let slots = bindings.default_keyform_slots(
+    let slots = bindings.keyform_slots(
         art_meshes.art_mesh_keyform_binding_band_index(art_mesh_index)?,
         keyform_count,
+        parameter_values,
     )?;
     let base_local_keyform_index = slots.first()?.local_index;
     let mesh = build_moc3_drawable_mesh(
