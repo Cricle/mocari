@@ -135,3 +135,40 @@ fn looping_motion_wraps_time() {
     assert!(!player.is_finished());
     assert!((player.time() - 0.5).abs() < 0.0001);
 }
+
+fn hiyori_mesh_snapshot(model: &rusty_live2d::assets::RuntimeModel) -> Vec<Vec<[f32; 2]>> {
+    model
+        .runtime()
+        .meshes()
+        .iter()
+        .map(|mesh| mesh.vertices().iter().map(|v| v.position()).collect())
+        .collect()
+}
+
+// Regression for the "two arms" / mixed-motion-limb bug: keyform bindings were
+// indexed by their binding id instead of the parameter they are bound to. Hiyori
+// has 70 parameters but 72 parameter bindings (two parameters each own a second
+// binding), so past that point binding id != parameter id; the exact map is
+// asserted in moc3::keyform_bindings unit tests. Here we check the user-visible
+// effect: distinct parameters drive distinct, non-empty deformations.
+#[test]
+fn hiyori_distinct_bindings_drive_distinct_parameters() {
+    let mut model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+    let baseline = hiyori_mesh_snapshot(&model);
+
+    model.runtime_mut().set_parameter("ParamRibbon", 1.0);
+    model.runtime_mut().update_meshes().unwrap();
+    let ribbon = hiyori_mesh_snapshot(&model);
+    assert_ne!(baseline, ribbon, "ParamRibbon should deform the Hiyori mesh");
+
+    model.runtime_mut().reset_parameters();
+    model.runtime_mut().set_parameter("ParamSkirt2", 1.0);
+    model.runtime_mut().update_meshes().unwrap();
+    let skirt = hiyori_mesh_snapshot(&model);
+    assert_ne!(baseline, skirt, "ParamSkirt2 should deform the Hiyori mesh");
+
+    assert_ne!(
+        ribbon, skirt,
+        "distinct parameters must drive distinct deformations"
+    );
+}
