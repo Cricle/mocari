@@ -362,6 +362,7 @@ impl WindowState {
         };
         player.tick(delta);
         self.model.runtime.reset_parameters();
+        self.model.runtime.reset_part_opacities();
         player.apply(&mut self.model.runtime);
         if player.is_finished() {
             self.model.player = None;

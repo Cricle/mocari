@@ -5,8 +5,8 @@ use crate::{
     json::Model3,
     moc3::{
         Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3CanvasInfo, Moc3Deformers, Moc3DrawableMesh,
-        Moc3Ids, Moc3KeyformBindings, Moc3OffscreenInfo,
-        build_moc3_drawable_meshes_with_parameters_and_offscreen_state,
+        Moc3Ids, Moc3KeyformBindings, Moc3OffscreenInfo, Moc3Parts,
+        build_moc3_drawable_meshes_with_parameters_offscreen_and_part_opacities,
     },
 };
 
@@ -20,8 +20,12 @@ pub struct ModelRuntime {
     bindings: Moc3KeyformBindings,
     ids: Moc3Ids,
     offscreen: Moc3OffscreenInfo,
+    parts: Moc3Parts,
     parameter_index: HashMap<String, usize>,
     parameter_values: Vec<f32>,
+    part_index: HashMap<String, usize>,
+    part_opacity_overrides: Vec<Option<f32>>,
+    part_opacities: Vec<f32>,
     meshes: Vec<Moc3DrawableMesh>,
 }
 
@@ -36,6 +40,7 @@ impl ModelRuntime {
         bindings: Moc3KeyformBindings,
         ids: Moc3Ids,
         offscreen: Moc3OffscreenInfo,
+        parts: Moc3Parts,
     ) -> Option<Self> {
         let parameter_values = bindings.parameter_default_values().to_vec();
         let parameter_index = ids
@@ -44,6 +49,13 @@ impl ModelRuntime {
             .enumerate()
             .map(|(index, id)| (id.clone(), index))
             .collect();
+        let part_index = ids
+            .parts()
+            .iter()
+            .enumerate()
+            .map(|(index, id)| (id.clone(), index))
+            .collect();
+        let part_count = parts.part_count();
 
         let mut runtime = Self {
             model,
@@ -54,8 +66,12 @@ impl ModelRuntime {
             bindings,
             ids,
             offscreen,
+            parts,
             parameter_index,
             parameter_values,
+            part_index,
+            part_opacity_overrides: vec![None; part_count],
+            part_opacities: vec![1.0; part_count],
             meshes: Vec::new(),
         };
         runtime.update_meshes()?;
@@ -123,8 +139,69 @@ impl ModelRuntime {
             .copy_from_slice(self.bindings.parameter_default_values());
     }
 
+    pub fn part_ids(&self) -> &[String] {
+        self.ids.parts()
+    }
+
+    pub fn part_index(&self, id: &str) -> Option<usize> {
+        self.part_index.get(id).copied()
+    }
+
+    pub fn set_part_opacity(&mut self, id: &str, value: f32) -> bool {
+        match self.part_index(id) {
+            Some(index) => self.set_part_opacity_by_index(index, value),
+            None => false,
+        }
+    }
+
+    pub fn set_part_opacity_by_index(&mut self, index: usize, value: f32) -> bool {
+        let Some(slot) = self.part_opacity_overrides.get_mut(index) else {
+            return false;
+        };
+        *slot = Some(value.clamp(0.0, 1.0));
+        true
+    }
+
+    pub fn reset_part_opacities(&mut self) {
+        self.part_opacity_overrides.iter_mut().for_each(|o| *o = None);
+    }
+
+    fn update_part_opacities(&mut self) {
+        for index in 0..self.part_opacities.len() {
+            self.part_opacities[index] = self.part_opacity_overrides[index].unwrap_or_else(|| {
+                self.parts
+                    .interpolate_opacity(index, &self.bindings, &self.parameter_values)
+                    .unwrap_or(1.0)
+            });
+        }
+
+        for index in 0..self.part_opacities.len() {
+            let mut opacity = self.part_opacities[index];
+            let mut parent = self.parts.parent_part_index(index);
+            while let Some(parent_index) = parent.and_then(|p| usize::try_from(p).ok()) {
+                opacity *= self.part_opacities[parent_index];
+                parent = self.parts.parent_part_index(parent_index);
+            }
+            self.part_opacities[index] = opacity;
+        }
+    }
+
+    fn drawable_part_opacities(&self) -> Vec<f32> {
+        (0..self.art_meshes.meshes().len())
+            .map(|drawable_index| {
+                self.offscreen
+                    .drawable_parent_part_index(drawable_index)
+                    .and_then(|p| usize::try_from(p).ok())
+                    .and_then(|part_index| self.part_opacities.get(part_index).copied())
+                    .unwrap_or(1.0)
+            })
+            .collect()
+    }
+
     pub fn update_meshes(&mut self) -> Option<()> {
-        self.meshes = build_moc3_drawable_meshes_with_parameters_and_offscreen_state(
+        self.update_part_opacities();
+        let drawable_part_opacities = self.drawable_part_opacities();
+        self.meshes = build_moc3_drawable_meshes_with_parameters_offscreen_and_part_opacities(
             &self.art_meshes,
             &self.art_mesh_keyforms,
             &self.deformers,
@@ -132,6 +209,7 @@ impl ModelRuntime {
             &self.ids,
             &self.offscreen,
             &self.parameter_values,
+            &drawable_part_opacities,
         )?;
         Some(())
     }

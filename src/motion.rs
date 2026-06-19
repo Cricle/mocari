@@ -9,6 +9,7 @@ use crate::{
 };
 
 const PARAMETER_TARGET: &str = "Parameter";
+const PART_OPACITY_TARGET: &str = "PartOpacity";
 
 #[derive(Debug, Clone)]
 pub struct MotionPlayer {
@@ -83,19 +84,9 @@ impl MotionPlayer {
         let fade_out = motion_fade_out_weight(self.time, end_time, 0.0);
 
         for curve in self.motion.curves() {
-            if curve.target() != PARAMETER_TARGET {
-                continue;
-            }
-            let Some(index) = runtime.parameter_index(curve.id()) else {
-                continue;
-            };
             let Some(sampled) = curve.sample(self.time) else {
                 continue;
             };
-            let Some(current) = runtime.parameter_value_by_index(index) else {
-                continue;
-            };
-
             let curve_weight = parameter_curve_fade_weight(
                 self.weight,
                 fade_in,
@@ -106,8 +97,27 @@ impl MotionPlayer {
                 0.0,
                 end_time,
             );
-            let value = apply_motion_fade(current, sampled, curve_weight);
-            runtime.set_parameter_by_index(index, value);
+
+            match curve.target() {
+                PARAMETER_TARGET => {
+                    let Some(index) = runtime.parameter_index(curve.id()) else {
+                        continue;
+                    };
+                    let Some(current) = runtime.parameter_value_by_index(index) else {
+                        continue;
+                    };
+                    let value = apply_motion_fade(current, sampled, curve_weight);
+                    runtime.set_parameter_by_index(index, value);
+                }
+                PART_OPACITY_TARGET => {
+                    let Some(index) = runtime.part_index(curve.id()) else {
+                        continue;
+                    };
+                    let value = apply_motion_fade(1.0, sampled, curve_weight);
+                    runtime.set_part_opacity_by_index(index, value);
+                }
+                _ => {}
+            }
         }
     }
 }

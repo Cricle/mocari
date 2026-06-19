@@ -12,6 +12,7 @@ mod mesh_build;
 mod offscreen;
 mod offsets;
 mod parse;
+mod parts;
 
 pub use art_meshes::{Moc3ArtMeshInfo, Moc3ArtMeshes};
 pub use canvas::Moc3CanvasInfo;
@@ -30,6 +31,8 @@ pub use mesh_build::{
     build_moc3_drawable_meshes_for_default_pose_with_offscreen_state,
     build_moc3_drawable_meshes_with_parameters,
     build_moc3_drawable_meshes_with_parameters_and_offscreen_state,
+    build_moc3_drawable_meshes_with_parameters_offscreen_and_part_opacities,
 };
 pub use offscreen::Moc3OffscreenInfo;
 pub use offsets::Moc3SectionOffsets;
+pub use parts::Moc3Parts;

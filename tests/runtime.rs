@@ -172,3 +172,38 @@ fn hiyori_distinct_bindings_drive_distinct_parameters() {
         "distinct parameters must drive distinct deformations"
     );
 }
+
+// Regression for ghost limbs: a part with opacity 0 must hide every drawable in
+// its subtree. We pick any part that owns drawables and verify zeroing it drives
+// at least one mesh to zero opacity while leaving others visible.
+#[test]
+fn zeroing_a_part_hides_its_drawables() {
+    let mut model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+    let baseline_visible = model
+        .runtime()
+        .meshes()
+        .iter()
+        .filter(|mesh| mesh.opacity() > 0.0)
+        .count();
+    assert!(baseline_visible > 0);
+
+    let part_ids: Vec<String> = model.runtime().part_ids().to_vec();
+    let mut hid_some = false;
+    for part_id in part_ids {
+        model.runtime_mut().reset_part_opacities();
+        model.runtime_mut().set_part_opacity(&part_id, 0.0);
+        model.runtime_mut().update_meshes().unwrap();
+        let visible = model
+            .runtime()
+            .meshes()
+            .iter()
+            .filter(|mesh| mesh.opacity() > 0.0)
+            .count();
+        if visible < baseline_visible {
+            hid_some = true;
+            assert!(visible > 0, "a single part should not hide the whole model");
+            break;
+        }
+    }
+    assert!(hid_some, "no part hid any drawable");
+}

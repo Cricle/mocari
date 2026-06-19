@@ -72,6 +72,29 @@ pub fn build_moc3_drawable_meshes_with_parameters_and_offscreen_state(
     offscreen: &Moc3OffscreenInfo,
     parameter_values: &[f32],
 ) -> Option<Vec<Moc3DrawableMesh>> {
+    build_moc3_drawable_meshes_with_parameters_offscreen_and_part_opacities(
+        art_meshes,
+        art_mesh_keyforms,
+        deformers,
+        bindings,
+        ids,
+        offscreen,
+        parameter_values,
+        &[],
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn build_moc3_drawable_meshes_with_parameters_offscreen_and_part_opacities(
+    art_meshes: &Moc3ArtMeshes,
+    art_mesh_keyforms: &Moc3ArtMeshKeyforms,
+    deformers: &Moc3Deformers,
+    bindings: &Moc3KeyformBindings,
+    ids: &Moc3Ids,
+    offscreen: &Moc3OffscreenInfo,
+    parameter_values: &[f32],
+    drawable_part_opacities: &[f32],
+) -> Option<Vec<Moc3DrawableMesh>> {
     let mut meshes = build_moc3_drawable_meshes_with_parameters(
         art_meshes,
         art_mesh_keyforms,
@@ -79,6 +102,11 @@ pub fn build_moc3_drawable_meshes_with_parameters_and_offscreen_state(
         bindings,
         parameter_values,
     )?;
+
+    for (drawable_index, part_opacity) in drawable_part_opacities.iter().copied().enumerate() {
+        let mesh = meshes.get_mut(drawable_index)?;
+        mesh.set_opacity(mesh.opacity() * part_opacity);
+    }
 
     for drawable_index in offscreen.effect_source_drawable_indices(ids) {
         meshes.get_mut(drawable_index)?.set_opacity(0.0);
