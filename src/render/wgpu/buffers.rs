@@ -74,6 +74,7 @@ pub struct WgpuDrawableBuffers {
     draw_order: f32,
     render_order: i32,
     masks: Vec<i32>,
+    inverted_mask: bool,
     bounds: Option<WgpuClippingRect>,
 }
 
@@ -116,6 +117,10 @@ impl WgpuDrawableBuffers {
 
     pub fn masks(&self) -> &[i32] {
         &self.masks
+    }
+
+    pub fn inverted_mask(&self) -> bool {
+        self.inverted_mask
     }
 
     pub fn bounds(&self) -> Option<WgpuClippingRect> {
@@ -226,6 +231,7 @@ pub fn create_wgpu_drawable_buffers(
         draw_order: mesh.draw_order(),
         render_order: mesh.render_order(),
         masks: mesh.masks().to_vec(),
+        inverted_mask: mesh.is_inverted_mask(),
         bounds: drawable_vertex_bounds(mesh.vertices()),
     })
 }

@@ -157,7 +157,7 @@ impl WgpuLive2dRenderer {
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
-                        min_binding_size: wgpu::BufferSize::new(80),
+                        min_binding_size: wgpu::BufferSize::new(96),
                     },
                     count: None,
                 }],
@@ -381,8 +381,15 @@ impl WgpuLive2dRenderer {
         device: &wgpu::Device,
         matrix: &Matrix44,
         channel: WgpuMaskChannel,
+        inverted: bool,
     ) -> WgpuClipParams {
-        create_wgpu_clip_params(device, &self.clip_params_bind_group_layout, matrix, channel)
+        create_wgpu_clip_params(
+            device,
+            &self.clip_params_bind_group_layout,
+            matrix,
+            channel,
+            inverted,
+        )
     }
 
     pub fn create_clipping_resources(
@@ -408,6 +415,7 @@ impl WgpuLive2dRenderer {
                     .matrix_for_draw()
                     .ok_or(WgpuClippingLayoutError::MissingDrawMatrix { context_index })?,
                 layout.channel(),
+                context.inverted(),
             );
             let mask_params = self.create_mask_params(device, layout);
             let mask_drawable_indices = context

@@ -4,6 +4,7 @@ use super::{Moc3ArtMeshKeyforms, Moc3ArtMeshes};
 
 const DRAWABLE_BLEND_ADDITIVE: u8 = 1 << 0;
 const DRAWABLE_BLEND_MULTIPLICATIVE: u8 = 1 << 1;
+const DRAWABLE_MASK_INVERTED: u8 = 1 << 3;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Moc3DrawableVertex {
@@ -111,6 +112,10 @@ impl Moc3DrawableMesh {
 
     pub fn blend_mode(&self) -> Moc3DrawableBlendMode {
         Moc3DrawableBlendMode::from_flags(self.drawable_flags)
+    }
+
+    pub fn is_inverted_mask(&self) -> bool {
+        self.drawable_flags & DRAWABLE_MASK_INVERTED != 0
     }
 
     pub fn opacity(&self) -> f32 {

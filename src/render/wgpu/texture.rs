@@ -144,9 +144,14 @@ pub fn encode_wgpu_mask_params(layout: WgpuClippingLayout) -> Vec<u8> {
     bytes
 }
 
-pub fn encode_wgpu_clip_params(matrix: &Matrix44, channel: WgpuMaskChannel) -> Vec<u8> {
+pub fn encode_wgpu_clip_params(
+    matrix: &Matrix44,
+    channel: WgpuMaskChannel,
+    inverted: bool,
+) -> Vec<u8> {
     let mut bytes = encode_wgpu_matrix(matrix);
-    for value in channel.flag() {
+    let inverted_flag = [if inverted { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0];
+    for value in channel.flag().into_iter().chain(inverted_flag) {
         bytes.extend_from_slice(&value.to_ne_bytes());
     }
 
@@ -181,8 +186,9 @@ pub(super) fn create_wgpu_clip_params(
     bind_group_layout: &wgpu::BindGroupLayout,
     matrix: &Matrix44,
     channel: WgpuMaskChannel,
+    inverted: bool,
 ) -> WgpuClipParams {
-    let bytes = encode_wgpu_clip_params(matrix, channel);
+    let bytes = encode_wgpu_clip_params(matrix, channel, inverted);
     let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("live2d.clip.params.uniform"),
         contents: &bytes,

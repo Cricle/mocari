@@ -86,7 +86,8 @@ fn live2d_masked_wgsl_samples_inverse_mask_channel() {
     assert!(source.contains("channel_flag: vec4<f32>"));
     assert!(source.contains("clip_params.clip_matrix * position"));
     assert!(source.contains("vec4<f32>(sample.rgb * alpha, alpha)"));
-    assert!(source.contains("dot(vec4<f32>(1.0) - mask_sample, clip_params.channel_flag)"));
+    assert!(source.contains("dot(mask_sample, clip_params.channel_flag)"));
+    assert!(source.contains("select(masked, 1.0 - masked, clip_params.inverted.x > 0.5)"));
 }
 
 #[test]
@@ -146,9 +147,9 @@ fn encodes_clip_params_from_draw_matrix_and_channel() {
     matrix.scale(0.25, 0.5);
     matrix.translate(0.75, 0.25);
 
-    let bytes = encode_wgpu_clip_params(&matrix, WgpuMaskChannel::Blue);
+    let bytes = encode_wgpu_clip_params(&matrix, WgpuMaskChannel::Blue, true);
 
-    assert_eq!(bytes.len(), 80);
+    assert_eq!(bytes.len(), 96);
     assert_eq!(&bytes[0..4], &0.25f32.to_ne_bytes());
     assert_eq!(&bytes[20..24], &0.5f32.to_ne_bytes());
     assert_eq!(&bytes[48..52], &0.75f32.to_ne_bytes());
@@ -157,6 +158,8 @@ fn encodes_clip_params_from_draw_matrix_and_channel() {
     assert_eq!(&bytes[68..72], &0.0f32.to_ne_bytes());
     assert_eq!(&bytes[72..76], &1.0f32.to_ne_bytes());
     assert_eq!(&bytes[76..80], &0.0f32.to_ne_bytes());
+    assert_eq!(&bytes[80..84], &1.0f32.to_ne_bytes());
+    assert_eq!(&bytes[84..88], &0.0f32.to_ne_bytes());
 }
 
 #[test]
@@ -164,7 +167,8 @@ fn creates_clip_params_bind_group() {
     let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
     let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
 
-    let params = renderer.create_clip_params(&device, &Matrix44::identity(), WgpuMaskChannel::Red);
+    let params =
+        renderer.create_clip_params(&device, &Matrix44::identity(), WgpuMaskChannel::Red, false);
 
     let _ = params.buffer();
     let _ = params.bind_group();
@@ -364,7 +368,7 @@ fn creates_masked_pipeline_and_encodes_masked_draw_call() {
     let mask_target = renderer.create_mask_render_target(&device, 16).unwrap();
     let transform = renderer.create_transform(&device, &Matrix44::identity());
     let clip_params =
-        renderer.create_clip_params(&device, &Matrix44::identity(), WgpuMaskChannel::Red);
+        renderer.create_clip_params(&device, &Matrix44::identity(), WgpuMaskChannel::Red, false);
     let mesh = test_mesh_with_draw_order(0, 0.0);
     let buffers = WgpuMeshBuffers::from_drawables(&device, &[mesh]).unwrap();
     let drawable = &buffers.drawables()[0];
@@ -752,6 +756,24 @@ fn merges_clipping_contexts_with_same_mask_set_regardless_of_order() {
     assert_eq!(plan.contexts().len(), 1);
     assert_eq!(plan.contexts()[0].masks(), &[1, 2]);
     assert_eq!(plan.contexts()[0].drawable_indices(), &[0, 1]);
+}
+
+#[test]
+fn splits_clipping_contexts_when_inverted_flag_differs() {
+    let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let meshes = [
+        test_mesh(0, 0, 0.0, vec![1, 2]),
+        test_mesh(0, 1 << 3, 1.0, vec![1, 2]),
+    ];
+    let buffers = WgpuMeshBuffers::from_drawables(&device, &meshes).unwrap();
+
+    let plan = WgpuClippingPlan::from_mesh_buffers(&buffers);
+
+    assert_eq!(plan.contexts().len(), 2);
+    assert!(!plan.contexts()[0].inverted());
+    assert_eq!(plan.contexts()[0].drawable_indices(), &[0]);
+    assert!(plan.contexts()[1].inverted());
+    assert_eq!(plan.contexts()[1].drawable_indices(), &[1]);
 }
 
 #[test]

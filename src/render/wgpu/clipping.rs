@@ -172,6 +172,7 @@ impl std::error::Error for WgpuClippingLayoutError {}
 #[derive(Debug, Clone, PartialEq)]
 pub struct WgpuClippingContext {
     masks: Vec<i32>,
+    inverted: bool,
     drawable_indices: Vec<usize>,
     layout: Option<WgpuClippingLayout>,
     all_clipped_draw_rect: Option<WgpuClippingRect>,
@@ -182,6 +183,10 @@ pub struct WgpuClippingContext {
 impl WgpuClippingContext {
     pub fn masks(&self) -> &[i32] {
         &self.masks
+    }
+
+    pub fn inverted(&self) -> bool {
+        self.inverted
     }
 
     pub fn drawable_indices(&self) -> &[usize] {
@@ -222,14 +227,15 @@ impl WgpuClippingPlan {
                 continue;
             }
 
-            if let Some(context) = contexts
-                .iter_mut()
-                .find(|context| same_mask_set(&context.masks, drawable.masks()))
-            {
+            if let Some(context) = contexts.iter_mut().find(|context| {
+                context.inverted == drawable.inverted_mask()
+                    && same_mask_set(&context.masks, drawable.masks())
+            }) {
                 context.drawable_indices.push(drawable_index);
             } else {
                 contexts.push(WgpuClippingContext {
                     masks: drawable.masks().to_vec(),
+                    inverted: drawable.inverted_mask(),
                     drawable_indices: vec![drawable_index],
                     layout: None,
                     all_clipped_draw_rect: None,
