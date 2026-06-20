@@ -53,6 +53,10 @@ impl Model3 {
         self.file_references.physics.as_deref()
     }
 
+    pub fn pose(&self) -> Option<&str> {
+        self.file_references.pose.as_deref()
+    }
+
     pub fn display_info(&self) -> Option<&str> {
         self.file_references.display_info.as_deref()
     }
@@ -90,6 +94,8 @@ struct FileReferences {
     textures: Vec<String>,
     #[serde(rename = "Physics", default)]
     physics: Option<String>,
+    #[serde(rename = "Pose", default)]
+    pose: Option<String>,
     #[serde(rename = "DisplayInfo", default)]
     display_info: Option<String>,
     #[serde(rename = "Motions", default)]

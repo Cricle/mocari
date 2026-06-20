@@ -12,10 +12,11 @@ fn runtime_default_pose_matches_default_model() {
     let runtime_meshes = runtime.runtime().meshes();
     let default_meshes = default.meshes();
 
+    // Geometry must match; opacity may differ because the runtime applies the
+    // pose3 part groups (hiding the redundant arm) while load_model does not.
     assert_eq!(runtime_meshes.len(), default_meshes.len());
     for (left, right) in runtime_meshes.iter().zip(default_meshes) {
         assert_eq!(left.vertices(), right.vertices());
-        assert_eq!(left.opacity(), right.opacity());
     }
 }
 
@@ -206,4 +207,28 @@ fn zeroing_a_part_hides_its_drawables() {
         }
     }
     assert!(hid_some, "no part hid any drawable");
+}
+
+// Regression for the "four arms at rest" bug: pose3.json defines PartArmA vs
+// PartArmB as a mutually-exclusive group, so at the default pose only the first
+// arm is visible. Without pose handling every arm drawable renders at opacity
+// 1.0; applying the pose drives the redundant arm's drawables to zero.
+#[test]
+fn default_pose_hides_redundant_arm_via_pose_groups() {
+    let model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+    let hidden = model
+        .runtime()
+        .meshes()
+        .iter()
+        .filter(|mesh| mesh.opacity() == 0.0)
+        .count();
+    let visible = model
+        .runtime()
+        .meshes()
+        .iter()
+        .filter(|mesh| mesh.opacity() > 0.0)
+        .count();
+
+    assert!(hidden > 0, "pose group should hide the redundant arm at rest");
+    assert!(visible > 0, "the selected arm and body must stay visible");
 }

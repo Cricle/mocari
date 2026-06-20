@@ -357,16 +357,16 @@ impl WindowState {
         let delta = now.duration_since(self.last_frame).as_secs_f32();
         self.last_frame = now;
 
-        let Some(player) = self.model.player.as_mut() else {
-            return Ok(());
-        };
-        player.tick(delta);
         self.model.runtime.reset_parameters();
         self.model.runtime.reset_part_opacities();
-        player.apply(&mut self.model.runtime);
-        if player.is_finished() {
-            self.model.player = None;
+        if let Some(player) = self.model.player.as_mut() {
+            player.tick(delta);
+            player.apply(&mut self.model.runtime);
+            if player.is_finished() {
+                self.model.player = None;
+            }
         }
+        self.model.runtime.apply_pose(delta);
         if self.model.runtime.update_meshes().is_none() {
             return Err(Box::new(ExampleError("failed to rebuild model meshes")));
         }

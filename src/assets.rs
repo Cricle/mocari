@@ -1,7 +1,7 @@
 use std::{fmt, fs, path::Path};
 
 use crate::{
-    json::Model3,
+    json::{Model3, Pose3},
     moc3::{
         Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3CanvasInfo, Moc3Deformers, Moc3DrawableMesh,
         Moc3Ids, Moc3KeyformBindings, Moc3OffscreenInfo, Moc3Parts,
@@ -132,6 +132,7 @@ pub fn load_model_runtime(path: impl AsRef<Path>) -> Result<RuntimeModel, AssetL
         parsed.ids,
         parsed.offscreen,
         parsed.parts,
+        parsed.pose,
     )
     .ok_or(AssetLoadError::DrawableMeshes)?;
 
@@ -177,6 +178,7 @@ struct ParsedModel {
     ids: Moc3Ids,
     offscreen: Moc3OffscreenInfo,
     parts: Moc3Parts,
+    pose: Option<Pose3>,
     textures: Vec<DecodedTexture>,
 }
 
@@ -198,6 +200,13 @@ fn parse_model(path: impl AsRef<Path>) -> Result<ParsedModel, AssetLoadError> {
     let offscreen = Moc3OffscreenInfo::parse(&moc).map_err(AssetLoadError::Moc3)?;
     let parts = Moc3Parts::parse(&moc).map_err(AssetLoadError::Moc3)?;
     let canvas = Moc3CanvasInfo::parse(&moc).map_err(AssetLoadError::Moc3)?;
+    let pose = match model.pose() {
+        Some(pose_file) => {
+            let pose_source = read_text(&model_dir.join(pose_file))?;
+            Some(Pose3::from_json_str(&pose_source).map_err(AssetLoadError::Json)?)
+        }
+        None => None,
+    };
     let textures = model
         .textures()
         .iter()
@@ -214,6 +223,7 @@ fn parse_model(path: impl AsRef<Path>) -> Result<ParsedModel, AssetLoadError> {
         ids,
         offscreen,
         parts,
+        pose,
         textures,
     })
 }
