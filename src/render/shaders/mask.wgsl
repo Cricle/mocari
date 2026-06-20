@@ -48,6 +48,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         * step(pos.x, mask_params.base_rect.z)
         * step(pos.y, mask_params.base_rect.w);
     let texture_alpha = textureSample(live2d_texture, live2d_sampler, input.uv).a;
-    let source_alpha = texture_alpha * input.opacity * inside;
+    let source_alpha = texture_alpha * inside;
     return mask_params.channel_flag * source_alpha;
 }
