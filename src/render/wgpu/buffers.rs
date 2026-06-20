@@ -145,12 +145,12 @@ impl WgpuMeshBuffers {
         let mut indices = (0..self.drawables.len()).collect::<Vec<_>>();
         indices.sort_by(|left, right| {
             self.drawables[*left]
-                .render_order
-                .cmp(&self.drawables[*right].render_order)
+                .draw_order
+                .total_cmp(&self.drawables[*right].draw_order)
                 .then_with(|| {
                     self.drawables[*left]
-                        .draw_order
-                        .total_cmp(&self.drawables[*right].draw_order)
+                        .render_order
+                        .cmp(&self.drawables[*right].render_order)
                 })
                 .then_with(|| left.cmp(right))
         });

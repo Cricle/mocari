@@ -571,7 +571,7 @@ fn mesh_buffers_expose_stable_draw_order_indices() {
 }
 
 #[test]
-fn mesh_buffers_order_by_stable_render_order_rank() {
+fn mesh_buffers_use_render_order_rank_to_break_draw_order_ties() {
     let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
     let meshes = [
         test_mesh_with_render_order(0, 650.0, 70),
@@ -580,7 +580,7 @@ fn mesh_buffers_order_by_stable_render_order_rank() {
     ];
     let buffers = WgpuMeshBuffers::from_drawables(&device, &meshes).unwrap();
 
-    assert_eq!(buffers.draw_order_indices(), vec![1, 0, 2]);
+    assert_eq!(buffers.draw_order_indices(), vec![2, 1, 0]);
 }
 
 #[test]
