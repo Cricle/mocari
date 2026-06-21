@@ -2,7 +2,7 @@ use wgpu::util::DeviceExt;
 
 use crate::core::Matrix44;
 
-use super::clipping::{WgpuClippingLayout, WgpuMaskChannel};
+use crate::render::common::{ClippingLayout as WgpuClippingLayout, MaskChannel as WgpuMaskChannel};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WgpuTextureError {
