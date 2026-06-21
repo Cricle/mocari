@@ -595,7 +595,7 @@ fn mesh_buffers_use_render_order_rank_to_break_draw_order_ties() {
 }
 
 // Regression for layer flicker during motion: draw order is quantized to an
-// integer (like Cubism) before sorting, so sub-integer jitter from per-frame
+// integer before sorting, so sub-integer jitter from per-frame
 // keyform interpolation can never swap two drawables that share an integer draw
 // order. The 499.9998 / 500.0001 pair must order exactly like a 500.0 / 500.0
 // pair, decided only by the stable render-order rank.

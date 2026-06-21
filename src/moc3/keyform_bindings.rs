@@ -229,10 +229,11 @@ impl Moc3KeyformBindings {
 
 /// Maps each parameter binding to the parameter that drives it.
 ///
-/// Slot 56 stores, per parameter, the index of its first parameter binding.
-/// Parameters without a binding repeat the previous begin index (a sentinel),
-/// so a parameter owns the bindings from its begin index up to the next strictly
-/// greater begin index, and the first parameter to claim a binding keeps it.
+/// `begin_indices` holds, per parameter, the index of its first parameter
+/// binding. Parameters without a binding repeat the previous begin index (a
+/// sentinel), so a parameter owns the bindings from its begin index up to the
+/// next strictly greater begin index, and the first parameter to claim a
+/// binding keeps it.
 fn expand_binding_parameter_indices(
     begin_indices: &[i32],
     binding_count: usize,

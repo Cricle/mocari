@@ -1,12 +1,14 @@
 use crate::{core::Matrix44, moc3::Moc3DrawableBlendMode};
 
+use crate::render::common::{
+    ClippingLayout as WgpuClippingLayout, ClippingLayoutError as WgpuClippingLayoutError,
+    MaskChannel as WgpuMaskChannel,
+};
+
 use super::{
     WgpuLive2dRenderer,
-    buffers::WgpuDrawableVertex,
-    clipping::{
-        WgpuClippingLayout, WgpuClippingLayoutError, WgpuClippingPlan, WgpuClippingResources,
-        WgpuMaskChannel, WgpuMaskRenderTarget, WgpuPreparedClippingContext,
-    },
+    buffers::drawable_vertex_layout,
+    clipping::{WgpuClippingPlan, WgpuClippingResources, WgpuMaskRenderTarget, WgpuPreparedClippingContext},
     texture::{
         WgpuClipParams, WgpuMaskParams, WgpuTexture, WgpuTextureError, WgpuTransform,
         create_wgpu_clip_params, create_wgpu_mask_params, create_wgpu_transform, rgba8_len,
@@ -544,7 +546,7 @@ fn create_live2d_pipeline(
     blend_mode: Moc3DrawableBlendMode,
     label: &'static str,
 ) -> wgpu::RenderPipeline {
-    let vertex_buffers = [WgpuDrawableVertex::buffer_layout()];
+    let vertex_buffers = [drawable_vertex_layout()];
     let color_targets = [Some(wgpu::ColorTargetState {
         format: color_format,
         blend: Some(live2d_blend_state(blend_mode)),
@@ -583,7 +585,7 @@ fn create_live2d_mask_pipeline(
     shader: &wgpu::ShaderModule,
     label: &'static str,
 ) -> wgpu::RenderPipeline {
-    let vertex_buffers = [WgpuDrawableVertex::buffer_layout()];
+    let vertex_buffers = [drawable_vertex_layout()];
     let color_targets = [Some(wgpu::ColorTargetState {
         format: wgpu::TextureFormat::Rgba8Unorm,
         blend: Some(wgpu_mask_blend_state()),

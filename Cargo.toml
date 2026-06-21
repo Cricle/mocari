@@ -3,14 +3,26 @@ name = "mocari"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+wgpu = ["dep:wgpu"]
+
 [dependencies]
 image = { version = "0.25.9", default-features = false, features = ["png"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
-wgpu = { version = "29.0.3", features = ["noop"] }
+wgpu = { version = "29.0.3", features = ["noop"], optional = true }
 
 [dev-dependencies]
 ab_glyph = "0.2.31"
 pollster = "0.4.0"
 winit = "0.30.13"
 zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+[[example]]
+name = "show_model"
+required-features = ["wgpu"]
+
+[[test]]
+name = "wgpu_renderer"
+required-features = ["wgpu"]

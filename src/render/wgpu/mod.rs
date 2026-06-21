@@ -4,15 +4,21 @@ mod draw;
 mod pipeline;
 mod texture;
 
+pub use crate::render::common::{
+    ClippingContext as WgpuClippingContext, ClippingLayout as WgpuClippingLayout,
+    ClippingLayoutError as WgpuClippingLayoutError, ClippingRect as WgpuClippingRect,
+    DrawableInfo as WgpuDrawableInfo, DrawableVertex as WgpuDrawableVertex,
+    MaskChannel as WgpuMaskChannel, encode_indices as encode_wgpu_indices,
+    encode_vertices as encode_wgpu_vertices,
+    vertex_from_drawable_vertex as wgpu_vertex_from_drawable_vertex,
+    vertices_from_drawable as wgpu_vertices_from_drawable,
+};
+
 pub use buffers::{
-    WgpuDrawableBuffers, WgpuDrawableVertex, WgpuMeshBuffers, create_wgpu_drawable_buffers,
-    encode_wgpu_indices, encode_wgpu_vertices, wgpu_vertex_from_drawable_vertex,
-    wgpu_vertices_from_drawable,
+    WgpuDrawableBuffers, WgpuMeshBuffers, create_wgpu_drawable_buffers, drawable_vertex_layout,
 };
 pub use clipping::{
-    WgpuClippingContext, WgpuClippingLayout, WgpuClippingLayoutError, WgpuClippingPlan,
-    WgpuClippingRect, WgpuClippingResources, WgpuMaskChannel, WgpuMaskRenderTarget,
-    WgpuPreparedClippingContext,
+    WgpuClippingPlan, WgpuClippingResources, WgpuMaskRenderTarget, WgpuPreparedClippingContext,
 };
 pub use draw::WgpuRenderError;
 pub use pipeline::{

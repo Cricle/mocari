@@ -1,6 +1,6 @@
 # Mocari
 
-A pure Rust Live2D/Cubism runtime experiment with a `wgpu` renderer.
+A pure Rust Live2D/Cubism runtime experiment
 
 > [!WARNING]
 > This project is still a work in progress.
@@ -28,6 +28,24 @@ git clone https://github.com/Eatgrapes/Mocari.git
 cd Mocari
 cargo build
 ```
+
+## Renderer backends
+
+By default Mocari builds **without** a renderer: it gives you parsing, the
+parameter/motion runtime, and a backend-agnostic `render::common` layer
+(vertices, draw-order sorting, clipping/mask layout) so you can drive any
+graphics API yourself.
+
+A built-in `wgpu` backend is available behind a feature:
+
+```toml
+[dependencies]
+mocari = { version = "Version", features = ["wgpu"] }
+```
+
+To write your own backend, build on the
+types in `mocari::render::common` and feed them `Moc3DrawableMesh` data from the
+runtime.
 
 ## Status
 
