@@ -8,12 +8,12 @@ A pure Rust Live2D/Cubism runtime experiment
 ## Why
 
 Live2D Cubism Core is closed source. For a long time, developers have mostly had to use **native bindings** to call it from languages like Rust.
-That approach limits portability, integration, and optimization, which is why Mocari exists.
+That approach limits portability, integration, and optimization, which is why **Mocari** exists.
 Rust is fast and reliable, making it a strong choice for rebuilding a Live2D-compatible runtime.
 
 ## Goal
 
-Mocari aims to become a practical **Rust library**.
+**Mocari** aims to become a practical **Rust library**.
 It should be easy to use, easy to call, and simple to integrate without complicated native runtime setup.
 
 ## Build
@@ -31,7 +31,7 @@ cargo build
 
 ## Renderer backends
 
-By default Mocari builds **without** a renderer: it gives you parsing, the
+By default **Mocari** builds **without** a renderer: it gives you parsing, the
 parameter/motion runtime, and a backend-agnostic `render::common` layer
 (vertices, draw-order sorting, clipping/mask layout) so you can drive any
 graphics API yourself.
@@ -59,7 +59,7 @@ This project currently implements:
 
 ## Statement
 
-Mocari is an unofficial and independent experimental project.
+**Mocari** is an unofficial and independent experimental project.
 This project is not affiliated with, endorsed by, sponsored by, or certified by Live2D Inc. "Live2D" and "Cubism" are trademarks or registered trademarks of their respective owners.
 This repository does not contain Live2D Cubism Core, Live2D SDK binaries, official source code, or any proprietary files distributed by Live2D Inc.
 The purpose of this project is to explore a pure Rust runtime and renderer for compatible 2D model data. It is provided for educational, research, and interoperability purposes only.
