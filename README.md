@@ -16,7 +16,17 @@ Rust is fast and reliable, making it a strong choice for rebuilding a Live2D-com
 **Mocari** aims to become a practical **Rust library**.
 It should be easy to use, easy to call, and simple to integrate without complicated native runtime setup.
 
-## Build
+## Install
+
+**Mocari** is published on [crates.io](https://crates.io/crates/mocari):
+
+```bash
+cargo add mocari
+```
+
+API documentation is hosted on [docs.rs/mocari](https://docs.rs/mocari).
+
+## Build from source
 
 You need:
 
@@ -40,7 +50,7 @@ A built-in `wgpu` backend is available behind a feature:
 
 ```toml
 [dependencies]
-mocari = { version = "Version", features = ["wgpu"] }
+mocari = { version = "0.1", features = ["wgpu"] }
 ```
 
 To write your own backend, build on the
