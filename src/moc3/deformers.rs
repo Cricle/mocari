@@ -4,10 +4,13 @@ use super::{
     Moc3CountInfo, Moc3Header, Moc3SectionOffsets,
     compose::{
         ComposedDeformer, ComposedDeformers, ComposedRotation, ComposedWarp,
-        ROTATION_DERIVATIVE_STEP, apply_composed_parent, parent_scale_accum,
+        ROTATION_DERIVATIVE_STEP, apply_composed_parent, parent_opacity_accum, parent_scale_accum,
     },
     keyform_bindings::{Moc3KeyformBindings, Moc3KeyformSlot},
-    parse::{invalid_moc3, read_bool_section, read_f32_section, read_i32_section, to_usize},
+    parse::{
+        invalid_moc3, read_bool_section, read_f32_section, read_f32_section_or_default,
+        read_i32_section, to_usize,
+    },
 };
 
 const DEFORMER_PARENT_DEFORMER_INDICES_SLOT: usize = 16;
@@ -23,7 +26,9 @@ const ROTATION_KEYFORM_BINDING_BAND_INDICES_SLOT: usize = 25;
 const ROTATION_KEYFORM_BEGIN_INDICES_SLOT: usize = 26;
 const ROTATION_KEYFORM_COUNTS_SLOT: usize = 27;
 const ROTATION_BASE_ANGLES_SLOT: usize = 28;
+const WARP_KEYFORM_OPACITIES_SLOT: usize = 59;
 const WARP_KEYFORM_POSITION_BEGIN_INDICES_SLOT: usize = 60;
+const ROTATION_KEYFORM_OPACITIES_SLOT: usize = 61;
 const ROTATION_KEYFORM_ANGLES_SLOT: usize = 62;
 const ROTATION_KEYFORM_ORIGIN_XS_SLOT: usize = 63;
 const ROTATION_KEYFORM_ORIGIN_YS_SLOT: usize = 64;
@@ -68,6 +73,7 @@ pub struct Moc3Deformers {
     warp_vertex_counts: Vec<i32>,
     warp_rows: Vec<i32>,
     warp_cols: Vec<i32>,
+    warp_keyform_opacities: Vec<f32>,
     rotation_keyform_binding_band_indices: Vec<i32>,
     rotation_keyform_begin_indices: Vec<i32>,
     rotation_keyform_counts: Vec<i32>,
@@ -79,6 +85,7 @@ pub struct Moc3Deformers {
     rotation_keyform_scales: Vec<f32>,
     rotation_keyform_reflect_xs: Vec<bool>,
     rotation_keyform_reflect_ys: Vec<bool>,
+    rotation_keyform_opacities: Vec<f32>,
     keyform_position_xys: Vec<f32>,
 }
 
@@ -162,6 +169,14 @@ impl Moc3Deformers {
             )?,
             warp_rows: read_i32_section(bytes, &offsets, WARP_ROWS_SLOT, warp_count, endianness)?,
             warp_cols: read_i32_section(bytes, &offsets, WARP_COLS_SLOT, warp_count, endianness)?,
+            warp_keyform_opacities: read_f32_section_or_default(
+                bytes,
+                &offsets,
+                WARP_KEYFORM_OPACITIES_SLOT,
+                warp_keyform_count,
+                endianness,
+                1.0,
+            )?,
             rotation_keyform_binding_band_indices: read_i32_section(
                 bytes,
                 &offsets,
@@ -239,6 +254,14 @@ impl Moc3Deformers {
                 rotation_keyform_count,
                 endianness,
             )?,
+            rotation_keyform_opacities: read_f32_section_or_default(
+                bytes,
+                &offsets,
+                ROTATION_KEYFORM_OPACITIES_SLOT,
+                rotation_keyform_count,
+                endianness,
+                1.0,
+            )?,
             keyform_position_xys: read_f32_section(
                 bytes,
                 &offsets,
@@ -271,11 +294,18 @@ impl Moc3Deformers {
                         *point = apply_composed_parent(&composed, parent, *point)?;
                     }
                     let scale_accum = parent_scale_accum(&composed, parent);
+                    let opacity = self.interpolated_warp_opacity(
+                        specific,
+                        bindings,
+                        parameter_values,
+                    )?;
+                    let opacity_accum = opacity * parent_opacity_accum(&composed, parent);
                     ComposedDeformer::Warp(ComposedWarp {
                         grid,
                         cols,
                         rows,
                         scale_accum,
+                        opacity_accum,
                     })
                 }
                 Moc3DeformerKind::Rotation => {
@@ -291,6 +321,12 @@ impl Moc3Deformers {
                     )?;
                     let parent_angle = (stepped.y() - origin.y()).atan2(stepped.x() - origin.x());
                     let scale_accum = parent_scale_accum(&composed, parent);
+                    let opacity = self.interpolated_rotation_opacity(
+                        specific,
+                        bindings,
+                        parameter_values,
+                    )?;
+                    let opacity_accum = opacity * parent_opacity_accum(&composed, parent);
                     ComposedDeformer::Rotation(ComposedRotation {
                         origin,
                         angle_degrees: rotation.angle_degrees + parent_angle.to_degrees(),
@@ -298,6 +334,7 @@ impl Moc3Deformers {
                         flip_x: rotation.flip_x,
                         flip_y: rotation.flip_y,
                         scale_accum: rotation.scale * scale_accum,
+                        opacity_accum,
                     })
                 }
             };
@@ -430,6 +467,39 @@ impl Moc3Deformers {
             flip_x: interpolate_bool(flip_x),
             flip_y: interpolate_bool(flip_y),
         })
+    }
+
+    fn interpolated_warp_opacity(
+        &self,
+        warp_index: usize,
+        bindings: &Moc3KeyformBindings,
+        parameter_values: &[f32],
+    ) -> Option<f32> {
+        let slots = self.warp_keyform_slots(warp_index, bindings, parameter_values)?;
+        let begin = usize::try_from(*self.warp_keyform_begin_indices.get(warp_index)?).ok()?;
+        let mut opacity = 0.0f32;
+        for slot in slots {
+            let keyform_index = begin.checked_add(slot.local_index)?;
+            opacity += *self.warp_keyform_opacities.get(keyform_index)? * slot.weight;
+        }
+        Some(opacity)
+    }
+
+    fn interpolated_rotation_opacity(
+        &self,
+        rotation_index: usize,
+        bindings: &Moc3KeyformBindings,
+        parameter_values: &[f32],
+    ) -> Option<f32> {
+        let slots = self.rotation_keyform_slots(rotation_index, bindings, parameter_values)?;
+        let begin =
+            usize::try_from(*self.rotation_keyform_begin_indices.get(rotation_index)?).ok()?;
+        let mut opacity = 0.0f32;
+        for slot in slots {
+            let keyform_index = begin.checked_add(slot.local_index)?;
+            opacity += *self.rotation_keyform_opacities.get(keyform_index)? * slot.weight;
+        }
+        Some(opacity)
     }
 
     fn warp_grid(&self, warp_index: usize, keyform_index: usize) -> Option<Vec<Vector2>> {

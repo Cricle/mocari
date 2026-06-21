@@ -202,8 +202,6 @@ fn zeroing_a_part_hides_its_drawables() {
 
 #[test]
 fn mao_drawables_carry_non_identity_multiply_and_screen_colors() {
-    // Mao (moc3 v5) ships per-drawable multiply/screen color keyforms; at rest some
-    // effect meshes resolve to a non-identity color that hides or tints them.
     let model = load_model_runtime("assets/models/Mao/Mao.model3.json").unwrap();
     let non_identity = model
         .runtime()
@@ -221,12 +219,23 @@ fn mao_drawables_carry_non_identity_multiply_and_screen_colors() {
 
 #[test]
 fn legacy_model_without_color_keyforms_defaults_to_identity() {
-    // Haru is moc3 v1 and has no color keyform sections; every drawable must fall
-    // back to the identity multiply (1,1,1) and screen (0,0,0).
     let model = load_model_runtime("assets/models/Haru/Haru.model3.json").unwrap();
     for mesh in model.runtime().meshes() {
         assert_eq!(mesh.multiply_color(), [1.0, 1.0, 1.0]);
         assert_eq!(mesh.screen_color(), [0.0, 0.0, 0.0]);
+    }
+}
+
+#[test]
+fn deformer_opacity_hides_rest_state_effects() {
+    let model = load_model_runtime("assets/models/Rice/Rice.model3.json").unwrap();
+    let meshes = model.runtime().meshes();
+    for &index in &[151usize, 152, 153] {
+        assert_eq!(
+            meshes[index].opacity(),
+            0.0,
+            "magic-circle drawable {index} must be hidden by deformer opacity at rest"
+        );
     }
 }
 

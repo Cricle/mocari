@@ -136,7 +136,9 @@ fn build_moc3_drawable_mesh_for_pose(
         art_mesh_index,
         base_local_keyform_index,
     )?;
-    let opacity = interpolate_art_mesh_opacity(art_mesh_keyforms, art_mesh_index, &slots)?;
+    let parent_deformer_index = art_meshes.art_mesh_parent_deformer_index(art_mesh_index)?;
+    let opacity = interpolate_art_mesh_opacity(art_mesh_keyforms, art_mesh_index, &slots)?
+        * composed.deformer_opacity(parent_deformer_index);
     let draw_order = interpolate_art_mesh_draw_order(art_mesh_keyforms, art_mesh_index, &slots)?;
     let multiply_color =
         interpolate_art_mesh_color(art_mesh_keyforms, art_mesh_index, &slots, |k| {
@@ -148,10 +150,7 @@ fn build_moc3_drawable_mesh_for_pose(
         })?;
     let mut positions = interpolate_art_mesh_positions(art_mesh_keyforms, art_mesh_index, &slots)?;
 
-    composed.transform_vertices(
-        art_meshes.art_mesh_parent_deformer_index(art_mesh_index)?,
-        &mut positions,
-    )?;
+    composed.transform_vertices(parent_deformer_index, &mut positions)?;
 
     let vertices = mesh
         .vertices()

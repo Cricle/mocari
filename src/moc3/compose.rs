@@ -16,6 +16,7 @@ pub(super) struct ComposedWarp {
     pub(super) cols: usize,
     pub(super) rows: usize,
     pub(super) scale_accum: f32,
+    pub(super) opacity_accum: f32,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -26,6 +27,7 @@ pub(super) struct ComposedRotation {
     pub(super) flip_x: bool,
     pub(super) flip_y: bool,
     pub(super) scale_accum: f32,
+    pub(super) opacity_accum: f32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -51,6 +53,21 @@ impl ComposedDeformers {
             *vertex = apply_one(self.deformers.get(index)?, *vertex)?;
         }
         Some(())
+    }
+
+    pub(super) fn deformer_opacity(&self, parent_deformer_index: i32) -> f32 {
+        if parent_deformer_index < 0 {
+            return 1.0;
+        }
+        let index = match usize::try_from(parent_deformer_index) {
+            Ok(value) => value,
+            Err(_) => return 1.0,
+        };
+        match self.deformers.get(index) {
+            Some(ComposedDeformer::Warp(warp)) => warp.opacity_accum,
+            Some(ComposedDeformer::Rotation(rotation)) => rotation.opacity_accum,
+            None => 1.0,
+        }
     }
 }
 
@@ -98,6 +115,24 @@ pub(super) fn parent_scale_accum(composed: &[Option<ComposedDeformer>], parent_i
     match composed.get(index).and_then(|slot| slot.as_ref()) {
         Some(ComposedDeformer::Warp(warp)) => warp.scale_accum,
         Some(ComposedDeformer::Rotation(rotation)) => rotation.scale_accum,
+        None => 1.0,
+    }
+}
+
+pub(super) fn parent_opacity_accum(
+    composed: &[Option<ComposedDeformer>],
+    parent_index: i32,
+) -> f32 {
+    if parent_index < 0 {
+        return 1.0;
+    }
+    let index = match usize::try_from(parent_index) {
+        Ok(value) => value,
+        Err(_) => return 1.0,
+    };
+    match composed.get(index).and_then(|slot| slot.as_ref()) {
+        Some(ComposedDeformer::Warp(warp)) => warp.opacity_accum,
+        Some(ComposedDeformer::Rotation(rotation)) => rotation.opacity_accum,
         None => 1.0,
     }
 }
