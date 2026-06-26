@@ -4,7 +4,7 @@ use super::{
     Moc3CountInfo, Moc3Header, Moc3SectionOffsets,
     compose::{
         ComposedDeformer, ComposedDeformers, ComposedRotation, ComposedWarp,
-        ROTATION_DERIVATIVE_STEP, apply_composed_parent, parent_opacity_accum, parent_scale_accum,
+        apply_composed_parent, parent_opacity_accum, parent_rotation_angle, parent_scale_accum,
     },
     keyform_bindings::{Moc3KeyformBindings, Moc3KeyformSlot},
     parse::{
@@ -310,15 +310,12 @@ impl Moc3Deformers {
                     let rotation =
                         self.interpolated_rotation(specific, bindings, parameter_values)?;
                     let origin = apply_composed_parent(&composed, parent, rotation.translation)?;
-                    let stepped = apply_composed_parent(
+                    let parent_angle = parent_rotation_angle(
                         &composed,
                         parent,
-                        Vector2::new(
-                            rotation.translation.x() + ROTATION_DERIVATIVE_STEP,
-                            rotation.translation.y(),
-                        ),
+                        origin,
+                        rotation.translation,
                     )?;
-                    let parent_angle = (stepped.y() - origin.y()).atan2(stepped.x() - origin.x());
                     let scale_accum = parent_scale_accum(&composed, parent);
                     let opacity =
                         self.interpolated_rotation_opacity(specific, bindings, parameter_values)?;

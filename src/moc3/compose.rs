@@ -2,7 +2,35 @@ use crate::core::{
     Vector2, WarpInterpolation, rotation_deformer_transform_point, warp_deformer_transform_target,
 };
 
-pub(super) const ROTATION_DERIVATIVE_STEP: f32 = 0.1;
+const ROTATION_DERIVATIVE_STEP: f32 = 0.1;
+
+pub(super) fn parent_rotation_angle(
+    composed: &[Option<ComposedDeformer>],
+    parent_index: i32,
+    origin_world: Vector2,
+    translation: Vector2,
+) -> Option<f32> {
+    let probe_y = apply_composed_parent(
+        composed,
+        parent_index,
+        Vector2::new(translation.x(), translation.y() + ROTATION_DERIVATIVE_STEP),
+    )?;
+    let dx = probe_y.x() - origin_world.x();
+    let dy = probe_y.y() - origin_world.y();
+    Some(wrap_angle(dy.atan2(dx) - std::f32::consts::FRAC_PI_2))
+}
+
+fn wrap_angle(mut angle: f32) -> f32 {
+    use std::f32::consts::PI;
+    const TWO_PI: f32 = 2.0 * PI;
+    while angle < -PI {
+        angle += TWO_PI;
+    }
+    while angle > PI {
+        angle -= TWO_PI;
+    }
+    angle
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum ComposedDeformer {
