@@ -230,6 +230,11 @@ pub fn parameter_curve_fade_weight(
     fade_in_start_time: f32,
     end_time_seconds: f32,
 ) -> f32 {
+    // A negative per-curve fade time is the Cubism sentinel for "this curve has
+    // no override; fall back to the motion-level fade", same as an absent value.
+    let curve_fade_in_seconds = curve_fade_in_seconds.filter(|seconds| *seconds >= 0.0);
+    let curve_fade_out_seconds = curve_fade_out_seconds.filter(|seconds| *seconds >= 0.0);
+
     if curve_fade_in_seconds.is_none() && curve_fade_out_seconds.is_none() {
         return motion_weight;
     }

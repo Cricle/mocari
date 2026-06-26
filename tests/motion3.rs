@@ -208,6 +208,13 @@ fn parameter_curve_fade_matches_framework_override_rules() {
         parameter_curve_fade_weight(0.8, 0.25, 0.75, Some(0.0), Some(0.0), 1.0, 0.0, 4.0),
         0.8,
     );
+
+    // A negative per-curve fade time is the "inherit motion fade" sentinel, so it
+    // must behave like None and not collapse the weight to zero.
+    assert_close(
+        parameter_curve_fade_weight(0.9, 1.0, 1.0, Some(-1.0), Some(-1.0), 1.5, 0.0, -1.0),
+        0.9,
+    );
 }
 
 #[test]
