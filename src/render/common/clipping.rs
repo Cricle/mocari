@@ -62,6 +62,10 @@ impl DrawableInfo {
 
 pub fn draw_order_indices(drawables: &[DrawableInfo]) -> Vec<usize> {
     let mut indices = (0..drawables.len()).collect::<Vec<_>>();
+    if render_orders_are_total_rank(drawables) {
+        indices.sort_by_key(|&index| drawables[index].render_order);
+        return indices;
+    }
     indices.sort_by(|left, right| {
         draw_order_from_raw(drawables[*left].draw_order)
             .cmp(&draw_order_from_raw(drawables[*right].draw_order))
@@ -73,6 +77,26 @@ pub fn draw_order_indices(drawables: &[DrawableInfo]) -> Vec<usize> {
             .then_with(|| left.cmp(right))
     });
     indices
+}
+
+fn render_orders_are_total_rank(drawables: &[DrawableInfo]) -> bool {
+    let count = drawables.len();
+    if count == 0 {
+        return false;
+    }
+    let mut seen = vec![false; count];
+    let mut identity = true;
+    for (index, drawable) in drawables.iter().enumerate() {
+        let Ok(rank) = usize::try_from(drawable.render_order) else {
+            return false;
+        };
+        match seen.get_mut(rank) {
+            Some(slot) if !*slot => *slot = true,
+            _ => return false,
+        }
+        identity &= rank == index;
+    }
+    !identity
 }
 
 fn drawable_vertex_bounds(vertices: &[Moc3DrawableVertex]) -> Option<ClippingRect> {

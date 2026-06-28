@@ -90,6 +90,10 @@ impl Moc3OffscreenInfo {
         self.part_offscreen_indices.get(part_index).copied()
     }
 
+    pub fn part_offscreen_indices(&self) -> &[i32] {
+        &self.part_offscreen_indices
+    }
+
     pub fn offscreen_owner_part_index(&self, offscreen_index: usize) -> Option<i32> {
         self.offscreen_owner_part_indices
             .get(offscreen_index)

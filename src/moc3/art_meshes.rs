@@ -21,7 +21,6 @@ const MASK_COUNTS_SLOT: usize = 48;
 const UV_XYS_SLOT: usize = 78;
 const POSITION_INDICES_SLOT: usize = 79;
 const DRAWABLE_MASKS_SLOT: usize = 80;
-const RENDER_ORDER_INDICES_SLOT: usize = 87;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Moc3ArtMeshInfo {
@@ -185,7 +184,7 @@ impl Moc3ArtMeshes {
         let offsets = Moc3SectionOffsets::parse(bytes)?;
         let counts = Moc3CountInfo::parse(bytes)?;
         let art_mesh_count = to_usize(counts.art_meshes(), "art mesh count")?;
-        let render_orders = parse_render_orders(bytes, &offsets, &counts, art_mesh_count)?;
+        let render_orders = default_render_orders(art_mesh_count);
 
         let keyform_binding_band_indices = read_i32_section_or_default(
             bytes,
@@ -360,47 +359,6 @@ impl Moc3ArtMeshes {
     pub fn art_mesh_render_order(&self, index: usize) -> Option<i32> {
         self.render_orders.get(index).copied()
     }
-}
-
-fn parse_render_orders(
-    bytes: &[u8],
-    offsets: &Moc3SectionOffsets,
-    counts: &Moc3CountInfo,
-    art_mesh_count: usize,
-) -> Result<Vec<i32>> {
-    let mut render_orders = default_render_orders(art_mesh_count);
-    let object_count = to_usize(
-        counts.draw_order_group_objects(),
-        "draw order group object count",
-    )?;
-    if object_count == 0
-        || offsets
-            .section_offset(RENDER_ORDER_INDICES_SLOT)
-            .unwrap_or(0)
-            == 0
-    {
-        return Ok(render_orders);
-    }
-
-    let order_indices = read_i32_section(
-        bytes,
-        offsets,
-        RENDER_ORDER_INDICES_SLOT,
-        object_count,
-        Moc3Header::parse(bytes)?.endianness(),
-    )?;
-
-    for (rank, drawable_index) in order_indices.into_iter().enumerate() {
-        let Ok(index) = usize::try_from(drawable_index) else {
-            continue;
-        };
-        if let Some(render_order) = render_orders.get_mut(index) {
-            *render_order =
-                i32::try_from(rank).map_err(|_| invalid_moc3("render order rank is too large"))?;
-        }
-    }
-
-    Ok(render_orders)
 }
 
 fn default_render_orders(mesh_count: usize) -> Vec<i32> {

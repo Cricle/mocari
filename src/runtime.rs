@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
 use crate::{
-    core::clamp_parameter_value,
+    core::{clamp_parameter_value, draw_order_from_raw},
     json::{Model3, Pose3, copy_pose_link_opacities, update_pose_group_opacities},
     moc3::{
-        Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3CanvasInfo, Moc3Deformers, Moc3DrawableMesh,
-        Moc3Ids, Moc3KeyformBindings, Moc3OffscreenInfo, Moc3Parts,
+        Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3CanvasInfo, Moc3Deformers, Moc3DrawOrderGroups,
+        Moc3DrawableMesh, Moc3Ids, Moc3KeyformBindings, Moc3OffscreenInfo, Moc3Parts,
         build_moc3_drawable_meshes_with_parameters_offscreen_and_part_opacities,
     },
 };
@@ -27,6 +27,7 @@ pub struct ModelRuntime {
     ids: Moc3Ids,
     offscreen: Moc3OffscreenInfo,
     parts: Moc3Parts,
+    draw_order_groups: Option<Moc3DrawOrderGroups>,
     parameter_index: HashMap<String, usize>,
     parameter_values: Vec<f32>,
     part_index: HashMap<String, usize>,
@@ -50,6 +51,7 @@ impl ModelRuntime {
         ids: Moc3Ids,
         offscreen: Moc3OffscreenInfo,
         parts: Moc3Parts,
+        draw_order_groups: Option<Moc3DrawOrderGroups>,
         pose: Option<Pose3>,
     ) -> Option<Self> {
         let parameter_values = bindings.parameter_default_values().to_vec();
@@ -87,6 +89,7 @@ impl ModelRuntime {
             ids,
             offscreen,
             parts,
+            draw_order_groups,
             parameter_index,
             parameter_values,
             part_index,
@@ -282,7 +285,45 @@ impl ModelRuntime {
             &self.parameter_values,
             &drawable_part_opacities,
         )?;
+        self.apply_group_render_orders();
         Some(())
+    }
+
+    fn apply_group_render_orders(&mut self) {
+        let Some(groups) = self.draw_order_groups.as_ref() else {
+            return;
+        };
+        let drawable_draw_orders: Vec<i32> = self
+            .meshes
+            .iter()
+            .map(|mesh| draw_order_from_raw(mesh.draw_order()))
+            .collect();
+
+        let part_count = self.parts.part_count();
+        let mut part_draw_orders = vec![0i32; part_count];
+        let mut part_enable = vec![false; part_count];
+        for index in 0..part_count {
+            if let Some(raw) =
+                self.parts
+                    .interpolate_draw_order(index, &self.bindings, &self.parameter_values)
+            {
+                part_draw_orders[index] = draw_order_from_raw(raw);
+                part_enable[index] = true;
+            }
+        }
+
+        let Some(render_orders) = groups.render_orders(
+            &drawable_draw_orders,
+            &part_draw_orders,
+            &part_enable,
+            self.offscreen.part_offscreen_indices(),
+            self.offscreen.offscreen_count(),
+        ) else {
+            return;
+        };
+        for (mesh, render_order) in self.meshes.iter_mut().zip(&render_orders) {
+            mesh.set_render_order(*render_order);
+        }
     }
 
     pub fn meshes(&self) -> &[Moc3DrawableMesh] {

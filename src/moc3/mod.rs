@@ -3,6 +3,7 @@ mod canvas;
 mod compose;
 mod counts;
 mod deformers;
+mod draw_order_groups;
 mod drawable;
 mod header;
 mod ids;
@@ -18,6 +19,7 @@ pub use art_meshes::{Moc3ArtMeshInfo, Moc3ArtMeshes};
 pub use canvas::Moc3CanvasInfo;
 pub use counts::Moc3CountInfo;
 pub use deformers::Moc3Deformers;
+pub use draw_order_groups::Moc3DrawOrderGroups;
 pub use drawable::{
     Moc3DrawableBlendMode, Moc3DrawableMesh, Moc3DrawableVertex, build_moc3_drawable_mesh,
     build_moc3_drawable_meshes,

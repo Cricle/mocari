@@ -154,6 +154,10 @@ impl Moc3DrawableMesh {
         self.render_order
     }
 
+    pub(crate) fn set_render_order(&mut self, render_order: i32) {
+        self.render_order = render_order;
+    }
+
     pub fn vertices(&self) -> &[Moc3DrawableVertex] {
         &self.vertices
     }

@@ -9,6 +9,7 @@ const PART_KEYFORM_BINDING_BAND_INDICES_SLOT: usize = 4;
 const PART_KEYFORM_BEGIN_INDICES_SLOT: usize = 5;
 const PART_KEYFORM_COUNTS_SLOT: usize = 6;
 const PART_PARENT_PART_INDICES_SLOT: usize = 9;
+const PART_KEYFORM_DRAW_ORDERS_SLOT: usize = 58;
 const PART_KEYFORM_OPACITIES_SLOT: usize = 59;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -17,6 +18,7 @@ pub struct Moc3Parts {
     keyform_binding_band_indices: Vec<i32>,
     keyform_begin_indices: Vec<i32>,
     keyform_counts: Vec<i32>,
+    keyform_draw_orders: Vec<f32>,
     keyform_opacities: Vec<f32>,
 }
 
@@ -56,6 +58,13 @@ impl Moc3Parts {
                 &offsets,
                 PART_KEYFORM_COUNTS_SLOT,
                 part_count,
+                endianness,
+            )?,
+            keyform_draw_orders: read_f32_section(
+                bytes,
+                &offsets,
+                PART_KEYFORM_DRAW_ORDERS_SLOT,
+                part_keyform_count,
                 endianness,
             )?,
             keyform_opacities: read_f32_section(
@@ -99,6 +108,31 @@ impl Moc3Parts {
             opacity += *self.keyform_opacities.get(keyform_index)? * slot.weight;
         }
         Some(opacity)
+    }
+
+    pub fn interpolate_draw_order(
+        &self,
+        part_index: usize,
+        bindings: &Moc3KeyformBindings,
+        parameter_values: &[f32],
+    ) -> Option<f32> {
+        let keyform_count = usize::try_from(*self.keyform_counts.get(part_index)?).ok()?;
+        if keyform_count == 0 {
+            return None;
+        }
+        let begin = usize::try_from(*self.keyform_begin_indices.get(part_index)?).ok()?;
+        let slots = bindings.keyform_slots(
+            *self.keyform_binding_band_indices.get(part_index)?,
+            keyform_count,
+            parameter_values,
+        )?;
+
+        let mut draw_order = 0.0f32;
+        for slot in slots {
+            let keyform_index = begin.checked_add(slot.local_index)?;
+            draw_order += *self.keyform_draw_orders.get(keyform_index)? * slot.weight;
+        }
+        Some(draw_order)
     }
 }
 
