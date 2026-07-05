@@ -65,6 +65,10 @@ impl Model3 {
         &self.file_references.motions
     }
 
+    pub fn expressions(&self) -> &[ExpressionReference] {
+        &self.file_references.expressions
+    }
+
     pub fn groups(&self) -> &[Group] {
         &self.groups
     }
@@ -100,6 +104,8 @@ struct FileReferences {
     display_info: Option<String>,
     #[serde(rename = "Motions", default)]
     motions: BTreeMap<String, Vec<MotionReference>>,
+    #[serde(rename = "Expressions", default)]
+    expressions: Vec<ExpressionReference>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -109,6 +115,24 @@ pub struct MotionReference {
 }
 
 impl MotionReference {
+    pub fn file(&self) -> &str {
+        &self.file
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ExpressionReference {
+    #[serde(rename = "Name")]
+    name: String,
+    #[serde(rename = "File")]
+    file: String,
+}
+
+impl ExpressionReference {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     pub fn file(&self) -> &str {
         &self.file
     }

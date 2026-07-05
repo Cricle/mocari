@@ -3,6 +3,8 @@ use serde::{Deserialize, Deserializer};
 use crate::{Error, Result};
 
 const FORMAT: &str = "exp3.json";
+pub const DEFAULT_EXPRESSION_FADE_IN_TIME: f32 = 1.0;
+pub const DEFAULT_EXPRESSION_FADE_OUT_TIME: f32 = 1.0;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Expression3 {
@@ -36,13 +38,33 @@ impl Expression3 {
         self.fade_in_time
     }
 
+    pub fn resolved_fade_in_time(&self) -> f32 {
+        resolved_expression_fade_in_time(self.fade_in_time)
+    }
+
     pub fn fade_out_time(&self) -> Option<f32> {
         self.fade_out_time
+    }
+
+    pub fn resolved_fade_out_time(&self) -> f32 {
+        resolved_expression_fade_out_time(self.fade_out_time)
     }
 
     pub fn parameters(&self) -> &[ExpressionParameter] {
         &self.parameters
     }
+}
+
+pub fn resolved_expression_fade_in_time(fade_in_time: Option<f32>) -> f32 {
+    fade_in_time
+        .unwrap_or(DEFAULT_EXPRESSION_FADE_IN_TIME)
+        .max(0.0)
+}
+
+pub fn resolved_expression_fade_out_time(fade_out_time: Option<f32>) -> f32 {
+    fade_out_time
+        .unwrap_or(DEFAULT_EXPRESSION_FADE_OUT_TIME)
+        .max(0.0)
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]

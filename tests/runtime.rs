@@ -1,6 +1,7 @@
 use mocari::{
     assets::{load_model, load_model_runtime},
-    json::Motion3,
+    expression::{ExpressionManager, ExpressionPlayer, load_expression},
+    json::{Expression3, Motion3},
     motion::MotionPlayer,
 };
 
@@ -220,6 +221,84 @@ fn mao_drawables_carry_non_identity_multiply_and_screen_colors() {
 }
 
 #[test]
+fn expression_player_applies_faded_expression_parameters() {
+    let mut model = load_model_runtime("assets/models/Haru/Haru.model3.json").unwrap();
+    let expression = Expression3::from_json_str(
+        r#"{
+            "Type": "Live2D Expression",
+            "Parameters": [
+                { "Id": "ParamAngleX", "Value": 10.0, "Blend": "Add" }
+            ]
+        }"#,
+    )
+    .unwrap();
+    let index = model.runtime().parameter_index("ParamAngleX").unwrap();
+    let default = model.runtime().parameter_value_by_index(index).unwrap();
+
+    let mut player = ExpressionPlayer::new(expression);
+    player.tick(0.5);
+    player.apply(model.runtime_mut());
+
+    let value = model.runtime().parameter_value_by_index(index).unwrap();
+    assert_close(value, default + 5.0);
+}
+
+#[test]
+fn expression_manager_fades_out_previous_expression_when_playing_next() {
+    let mut model = load_model_runtime("assets/models/Haru/Haru.model3.json").unwrap();
+    let first = Expression3::from_json_str(
+        r#"{
+            "Type": "Live2D Expression",
+            "Parameters": [
+                { "Id": "ParamAngleX", "Value": 10.0, "Blend": "Add" }
+            ]
+        }"#,
+    )
+    .unwrap();
+    let second = Expression3::from_json_str(
+        r#"{
+            "Type": "Live2D Expression",
+            "Parameters": [
+                { "Id": "ParamAngleX", "Value": -4.0, "Blend": "Add" }
+            ]
+        }"#,
+    )
+    .unwrap();
+    let index = model.runtime().parameter_index("ParamAngleX").unwrap();
+    let default = model.runtime().parameter_value_by_index(index).unwrap();
+
+    let mut manager = ExpressionManager::new();
+    manager.play(first);
+    manager.tick(1.0);
+    model.runtime_mut().reset_parameters();
+    manager.apply(model.runtime_mut());
+    assert_close(
+        model.runtime().parameter_value_by_index(index).unwrap(),
+        default + 10.0,
+    );
+
+    manager.play(second);
+    manager.tick(0.5);
+    model.runtime_mut().reset_parameters();
+    manager.apply(model.runtime_mut());
+
+    let value = model.runtime().parameter_value_by_index(index).unwrap();
+    assert_close(value, default + (10.0 * 0.5) + (-4.0 * 0.5));
+    assert_eq!(manager.active_expression_count(), 2);
+
+    manager.tick(0.5);
+    assert_eq!(manager.active_expression_count(), 1);
+}
+
+#[test]
+fn load_expression_reads_exp3_asset() {
+    let expression = load_expression("assets/models/Haru/expressions/F01.exp3.json").unwrap();
+
+    assert_eq!(expression.kind(), "Live2D Expression");
+    assert_eq!(expression.parameters()[0].id(), "ParamMouthForm");
+}
+
+#[test]
 fn mao_drawable_colors_match_core_default_pose() {
     let model = load_model_runtime("assets/models/Mao/Mao.model3.json").unwrap();
     let meshes = model.runtime().meshes();
@@ -279,4 +358,11 @@ fn assert_color_close(actual: [f32; 3], expected: [f32; 3]) {
     for (actual, expected) in actual.into_iter().zip(expected) {
         assert!((actual - expected).abs() < 0.0001);
     }
+}
+
+fn assert_close(actual: f32, expected: f32) {
+    assert!(
+        (actual - expected).abs() < 0.0001,
+        "actual {actual}, expected {expected}"
+    );
 }

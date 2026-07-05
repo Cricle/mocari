@@ -2,9 +2,10 @@ use std::{error::Error, fmt, path::PathBuf, sync::Arc, time::Instant};
 
 use ab_glyph::{Font, FontArc, Glyph, ScaleFont, point};
 use mocari::{
-    ModelRuntime, MotionPlayer,
+    ExpressionManager, ModelRuntime, MotionPlayer,
     assets::{DecodedTexture, load_model_runtime},
     core::Matrix44,
+    expression::load_expression,
     moc3::{Moc3DrawableMesh, Moc3DrawableVertex},
     motion::load_motion,
     render::wgpu::{
@@ -27,6 +28,7 @@ const MODEL_VIEW_FILL: f32 = 1.85;
 const BUTTON_X: f64 = 16.0;
 const SWITCH_BUTTON_Y: f64 = 16.0;
 const MOTION_BUTTON_Y: f64 = 70.0;
+const EXPRESSION_BUTTON_Y: f64 = 124.0;
 const BUTTON_WIDTH: f64 = 168.0;
 const BUTTON_HEIGHT: f64 = 42.0;
 const BUTTON_RGBA: &[u8] = &[46, 65, 78, 235];
@@ -153,6 +155,8 @@ impl ApplicationHandler for ShowModelApp {
                         state.switch_to_next_model()
                     } else if state.button_hit(MOTION_BUTTON_Y) {
                         state.play_random_motion()
+                    } else if state.button_hit(EXPRESSION_BUTTON_Y) {
+                        state.play_random_expression()
                     } else {
                         Ok(())
                     };
@@ -193,8 +197,10 @@ struct WindowState {
     button_texture: WgpuTexture,
     switch_transform: WgpuTransform,
     motion_transform: WgpuTransform,
+    expression_transform: WgpuTransform,
     switch_label: LabelQuad,
     motion_label: LabelQuad,
+    expression_label: LabelQuad,
     cursor_position: Option<PhysicalPosition<f64>>,
     last_frame: Instant,
     rng: u64,
@@ -203,7 +209,9 @@ struct WindowState {
 struct LoadedModel {
     runtime: ModelRuntime,
     motions: Vec<PathBuf>,
+    expressions: Vec<PathBuf>,
     player: Option<MotionPlayer>,
+    expression_manager: ExpressionManager,
     mesh_buffers: WgpuMeshBuffers,
     textures: Vec<WgpuTexture>,
     clipping_resources: WgpuClippingResources,
@@ -256,6 +264,8 @@ impl WindowState {
         let switch_transform = renderer.create_transform(&device, &Matrix44::identity());
         let motion_transform =
             renderer.create_transform(&device, &button_offset_matrix(size, MOTION_BUTTON_Y));
+        let expression_transform =
+            renderer.create_transform(&device, &button_offset_matrix(size, EXPRESSION_BUTTON_Y));
         let switch_label = create_label_quad(
             &renderer,
             &device,
@@ -274,6 +284,15 @@ impl WindowState {
             size,
             MOTION_BUTTON_Y,
         )?;
+        let expression_label = create_label_quad(
+            &renderer,
+            &device,
+            &queue,
+            &font,
+            "Play Expression",
+            size,
+            EXPRESSION_BUTTON_Y,
+        )?;
         window.set_title(&window_title(MODEL_SPECS[model_index]));
 
         Ok(Self {
@@ -290,8 +309,10 @@ impl WindowState {
             button_texture,
             switch_transform,
             motion_transform,
+            expression_transform,
             switch_label,
             motion_label,
+            expression_label,
             cursor_position: None,
             last_frame: Instant::now(),
             rng: 0x9e37_79b9_7f4a_7c15,
@@ -314,6 +335,10 @@ impl WindowState {
         self.motion_transform = self
             .renderer
             .create_transform(&self.device, &button_offset_matrix(size, MOTION_BUTTON_Y));
+        self.expression_transform = self.renderer.create_transform(
+            &self.device,
+            &button_offset_matrix(size, EXPRESSION_BUTTON_Y),
+        );
         self.switch_label = create_label_quad(
             &self.renderer,
             &self.device,
@@ -332,6 +357,15 @@ impl WindowState {
             size,
             MOTION_BUTTON_Y,
         )?;
+        self.expression_label = create_label_quad(
+            &self.renderer,
+            &self.device,
+            &self.queue,
+            &self.font,
+            "Play Expression",
+            size,
+            EXPRESSION_BUTTON_Y,
+        )?;
         Ok(())
     }
 
@@ -348,6 +382,18 @@ impl WindowState {
         let pick = (self.next_rng() % self.model.motions.len() as u64) as usize;
         let motion = load_motion(&self.model.motions[pick])?;
         self.model.player = Some(MotionPlayer::new(motion));
+        self.last_frame = Instant::now();
+        self.window.request_redraw();
+        Ok(())
+    }
+
+    fn play_random_expression(&mut self) -> Result<(), Box<dyn Error>> {
+        if self.model.expressions.is_empty() {
+            return Ok(());
+        }
+        let pick = (self.next_rng() % self.model.expressions.len() as u64) as usize;
+        let expression = load_expression(&self.model.expressions[pick])?;
+        self.model.expression_manager.play(expression);
         self.last_frame = Instant::now();
         self.window.request_redraw();
         Ok(())
@@ -374,6 +420,8 @@ impl WindowState {
                 self.model.player = None;
             }
         }
+        self.model.expression_manager.tick(delta);
+        self.model.expression_manager.apply(&mut self.model.runtime);
         self.model.runtime.apply_pose(delta);
         if self.model.runtime.update_meshes().is_none() {
             return Err(Box::new(ExampleError("failed to rebuild model meshes")));
@@ -500,6 +548,12 @@ impl WindowState {
             )?;
             self.renderer.draw_with_textures_and_transform(
                 &mut pass,
+                &self.button_buffers,
+                std::slice::from_ref(&self.button_texture),
+                &self.expression_transform,
+            )?;
+            self.renderer.draw_with_textures_and_transform(
+                &mut pass,
                 &self.switch_label.buffers,
                 std::slice::from_ref(&self.switch_label.texture),
                 &self.switch_transform,
@@ -508,6 +562,12 @@ impl WindowState {
                 &mut pass,
                 &self.motion_label.buffers,
                 std::slice::from_ref(&self.motion_label.texture),
+                &self.switch_transform,
+            )?;
+            self.renderer.draw_with_textures_and_transform(
+                &mut pass,
+                &self.expression_label.buffers,
+                std::slice::from_ref(&self.expression_label.texture),
                 &self.switch_transform,
             )?;
         }
@@ -544,11 +604,14 @@ fn load_rendered_model(
         .ok_or(ExampleError("model has no drawable bounds"))?;
     let textures = create_textures(renderer, device, queue, loaded.textures())?;
     let motions = motion_paths(&runtime, loaded.model_dir());
+    let expressions = expression_paths(&runtime, loaded.model_dir());
 
     let mut model = LoadedModel {
         runtime,
         motions,
+        expressions,
         player: None,
+        expression_manager: ExpressionManager::new(),
         mesh_buffers: WgpuMeshBuffers::from_drawables(device, &[])
             .ok_or(ExampleError("failed to create mesh buffers"))?,
         textures,
@@ -590,6 +653,18 @@ fn motion_paths(runtime: &ModelRuntime, model_dir: Option<&std::path::Path>) -> 
         .motions()
         .values()
         .flatten()
+        .map(|reference| model_dir.join(reference.file()))
+        .collect()
+}
+
+fn expression_paths(runtime: &ModelRuntime, model_dir: Option<&std::path::Path>) -> Vec<PathBuf> {
+    let Some(model_dir) = model_dir else {
+        return Vec::new();
+    };
+    runtime
+        .model()
+        .expressions()
+        .iter()
         .map(|reference| model_dir.join(reference.file()))
         .collect()
 }
@@ -967,6 +1042,34 @@ mod tests {
 
         assert!(motion.y > switch.y + switch.height - 0.0001);
         assert_eq!(switch.x, motion.x);
+    }
+
+    #[test]
+    fn expression_button_sits_below_motion_button() {
+        let motion = button_rect(MOTION_BUTTON_Y);
+        let expression = button_rect(EXPRESSION_BUTTON_Y);
+
+        assert!(expression.y > motion.y + motion.height - 0.0001);
+        assert_eq!(motion.x, expression.x);
+    }
+
+    #[test]
+    fn expression_paths_follow_model3_references() {
+        let loaded = load_model_runtime("assets/models/Mao/Mao.model3.json").unwrap();
+        let paths = expression_paths(loaded.runtime(), loaded.model_dir());
+
+        assert_eq!(paths.len(), 8);
+        assert_eq!(
+            paths[0],
+            std::path::PathBuf::from("assets/models/Mao/expressions/exp_01.exp3.json")
+        );
+        for path in paths {
+            assert!(
+                path.exists(),
+                "missing expression asset: {}",
+                path.display()
+            );
+        }
     }
 
     fn assert_close(actual: f32, expected: f32) {

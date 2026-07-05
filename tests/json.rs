@@ -63,6 +63,29 @@ mod model3 {
     }
 
     #[test]
+    fn parses_model3_expressions() {
+        let model = Model3::from_json_str(
+            r#"{
+                "Version": 3,
+                "FileReferences": {
+                    "Moc": "model.moc3",
+                    "Textures": ["texture_00.png"],
+                    "Expressions": [
+                        {
+                            "Name": "smile",
+                            "File": "expressions/smile.exp3.json"
+                        }
+                    ]
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(model.expressions()[0].name(), "smile");
+        assert_eq!(model.expressions()[0].file(), "expressions/smile.exp3.json");
+    }
+
+    #[test]
     fn rejects_unsupported_model3_version() {
         let error = Model3::from_json_str(
             r#"{
@@ -150,6 +173,19 @@ mod expression3 {
         .unwrap();
 
         assert_eq!(expression.parameters()[0].blend(), ExpressionBlend::Add);
+    }
+
+    #[test]
+    fn expression3_resolves_default_fade_times_like_framework() {
+        let expression = Expression3::from_json_str(
+            r#"{
+                "Type": "Live2D Expression"
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(expression.resolved_fade_in_time(), 1.0);
+        assert_eq!(expression.resolved_fade_out_time(), 1.0);
     }
 
     #[test]
