@@ -143,6 +143,29 @@ fn warp_deformer_target_extrapolates_points_outside_unit_grid() {
 }
 
 #[test]
+fn warp_deformer_target_extrapolates_non_affine_grid_via_corner_basis() {
+    // c11 deviates from the affine corner (10, 10), so edge-cell linear
+    // extrapolation and the official corner-basis extrapolation diverge.
+    let grid = [
+        Vector2::new(0.0, 0.0),
+        Vector2::new(10.0, 0.0),
+        Vector2::new(0.0, 10.0),
+        Vector2::new(20.0, 30.0),
+    ];
+
+    let transformed = warp_deformer_transform_target(
+        Vector2::new(1.25, 0.5),
+        &grid,
+        1,
+        1,
+        WarpInterpolation::Quad,
+    )
+    .unwrap();
+
+    assert_vec_close(transformed, Vector2::new(19.0625, 18.125));
+}
+
+#[test]
 fn applies_deformer_path_to_art_mesh_vertices() {
     let grid = [
         Vector2::new(10.0, 20.0),

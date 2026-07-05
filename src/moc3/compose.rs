@@ -2,7 +2,9 @@ use crate::core::{
     Vector2, WarpInterpolation, rotation_deformer_transform_point, warp_deformer_transform_target,
 };
 
-const ROTATION_DERIVATIVE_STEP: f32 = 0.1;
+const ROTATION_PROBE_ITERATIONS: usize = 10;
+const ROTATION_PROBE_STEP_WARP_PARENT: f32 = -0.1;
+const ROTATION_PROBE_STEP_ROTATION_PARENT: f32 = -10.0;
 
 pub(super) fn parent_rotation_angle(
     composed: &[Option<ComposedDeformer>],
@@ -10,14 +12,54 @@ pub(super) fn parent_rotation_angle(
     origin_world: Vector2,
     translation: Vector2,
 ) -> Option<f32> {
-    let probe_y = apply_composed_parent(
-        composed,
-        parent_index,
-        Vector2::new(translation.x(), translation.y() + ROTATION_DERIVATIVE_STEP),
-    )?;
-    let dx = probe_y.x() - origin_world.x();
-    let dy = probe_y.y() - origin_world.y();
-    Some(wrap_angle(dy.atan2(dx) - std::f32::consts::FRAC_PI_2))
+    let step = match parent_deformer(composed, parent_index) {
+        Some(ComposedDeformer::Rotation(_)) => ROTATION_PROBE_STEP_ROTATION_PARENT,
+        _ => ROTATION_PROBE_STEP_WARP_PARENT,
+    };
+
+    let mut scale = 1.0f32;
+    let mut direction = Vector2::default();
+    for _ in 0..ROTATION_PROBE_ITERATIONS {
+        let offset = step * scale;
+
+        let forward = apply_composed_parent(
+            composed,
+            parent_index,
+            Vector2::new(translation.x(), translation.y() + offset),
+        )?;
+        let dx = forward.x() - origin_world.x();
+        let dy = forward.y() - origin_world.y();
+        if dx != 0.0 || dy != 0.0 {
+            direction = Vector2::new(dx, dy);
+            break;
+        }
+
+        let backward = apply_composed_parent(
+            composed,
+            parent_index,
+            Vector2::new(translation.x(), translation.y() - offset),
+        )?;
+        let dx = backward.x() - origin_world.x();
+        let dy = backward.y() - origin_world.y();
+        if dx != 0.0 || dy != 0.0 {
+            direction = Vector2::new(-dx, -dy);
+            break;
+        }
+
+        scale *= 0.1;
+    }
+
+    Some(wrap_angle(
+        direction.y().atan2(direction.x()) - (step).atan2(0.0),
+    ))
+}
+
+fn parent_deformer(
+    composed: &[Option<ComposedDeformer>],
+    parent_index: i32,
+) -> Option<&ComposedDeformer> {
+    let index = usize::try_from(parent_index).ok()?;
+    composed.get(index)?.as_ref()
 }
 
 fn wrap_angle(mut angle: f32) -> f32 {
