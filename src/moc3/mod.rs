@@ -5,6 +5,7 @@ mod counts;
 mod deformers;
 mod draw_order_groups;
 mod drawable;
+mod glues;
 mod header;
 mod ids;
 mod keyform_bindings;
@@ -24,6 +25,7 @@ pub use drawable::{
     Moc3DrawableBlendMode, Moc3DrawableMesh, Moc3DrawableVertex, build_moc3_drawable_mesh,
     build_moc3_drawable_meshes,
 };
+pub use glues::Moc3Glues;
 pub use header::{Endianness, Moc3Header, Moc3Version};
 pub use ids::Moc3Ids;
 pub use keyform_bindings::Moc3KeyformBindings;

@@ -169,6 +169,27 @@ mod moc3_counts {
     }
 }
 
+mod moc3_glues {
+    use mocari::moc3::{Moc3CountInfo, Moc3Glues};
+
+    #[test]
+    fn parses_glue_sections_from_real_v5_models() {
+        let hiyori = std::fs::read("assets/models/Hiyori/Hiyori.moc3").unwrap();
+        let hiyori_counts = Moc3CountInfo::parse(&hiyori).unwrap();
+        let hiyori_glues = Moc3Glues::parse(&hiyori).unwrap();
+
+        assert_eq!(hiyori_counts.glue(), 26);
+        assert_eq!(hiyori_counts.glue_info(), 470);
+        assert_eq!(hiyori_counts.glue_keyforms(), 26);
+        assert_eq!(hiyori_glues.len(), 26);
+
+        let haru = std::fs::read("assets/models/Haru/Haru.moc3").unwrap();
+        let haru_glues = Moc3Glues::parse(&haru).unwrap();
+
+        assert!(haru_glues.is_empty());
+    }
+}
+
 mod moc3_ids {
     use mocari::{Error, moc3::Moc3Ids};
 

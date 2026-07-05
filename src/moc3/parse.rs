@@ -53,6 +53,22 @@ pub(super) fn read_i16_section(
     })
 }
 
+pub(super) fn read_u16_section(
+    bytes: &[u8],
+    offsets: &Moc3SectionOffsets,
+    slot: usize,
+    count: usize,
+    endianness: Endianness,
+) -> Result<Vec<u16>> {
+    read_section(bytes, offsets, slot, count, 2, |bytes, offset| {
+        let raw = [bytes[offset], bytes[offset + 1]];
+        match endianness {
+            Endianness::Little => u16::from_le_bytes(raw),
+            Endianness::Big => u16::from_be_bytes(raw),
+        }
+    })
+}
+
 pub(super) fn read_f32_section(
     bytes: &[u8],
     offsets: &Moc3SectionOffsets,

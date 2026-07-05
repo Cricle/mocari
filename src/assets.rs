@@ -4,7 +4,7 @@ use crate::{
     json::{Model3, Pose3},
     moc3::{
         Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3CanvasInfo, Moc3Deformers, Moc3DrawOrderGroups,
-        Moc3DrawableMesh, Moc3Ids, Moc3KeyformBindings, Moc3OffscreenInfo, Moc3Parts,
+        Moc3DrawableMesh, Moc3Glues, Moc3Ids, Moc3KeyformBindings, Moc3OffscreenInfo, Moc3Parts,
         build_moc3_drawable_meshes_for_default_pose_with_offscreen_state,
     },
     runtime::ModelRuntime,
@@ -100,7 +100,7 @@ impl std::error::Error for AssetLoadError {}
 
 pub fn load_model(path: impl AsRef<Path>) -> Result<DefaultModel, AssetLoadError> {
     let parsed = parse_model(path)?;
-    let meshes = build_moc3_drawable_meshes_for_default_pose_with_offscreen_state(
+    let mut meshes = build_moc3_drawable_meshes_for_default_pose_with_offscreen_state(
         &parsed.art_meshes,
         &parsed.art_mesh_keyforms,
         &parsed.deformers,
@@ -109,6 +109,14 @@ pub fn load_model(path: impl AsRef<Path>) -> Result<DefaultModel, AssetLoadError
         &parsed.offscreen,
     )
     .ok_or(AssetLoadError::DrawableMeshes)?;
+    parsed
+        .glues
+        .apply(
+            &mut meshes,
+            &parsed.bindings,
+            parsed.bindings.parameter_default_values(),
+        )
+        .ok_or(AssetLoadError::DrawableMeshes)?;
 
     Ok(DefaultModel {
         model: parsed.model,
@@ -131,6 +139,7 @@ pub fn load_model_runtime(path: impl AsRef<Path>) -> Result<RuntimeModel, AssetL
         parsed.bindings,
         parsed.ids,
         parsed.offscreen,
+        parsed.glues,
         parsed.parts,
         parsed.draw_order_groups,
         parsed.pose,
@@ -178,6 +187,7 @@ struct ParsedModel {
     bindings: Moc3KeyformBindings,
     ids: Moc3Ids,
     offscreen: Moc3OffscreenInfo,
+    glues: Moc3Glues,
     parts: Moc3Parts,
     draw_order_groups: Option<Moc3DrawOrderGroups>,
     pose: Option<Pose3>,
@@ -200,6 +210,7 @@ fn parse_model(path: impl AsRef<Path>) -> Result<ParsedModel, AssetLoadError> {
     let bindings = Moc3KeyformBindings::parse(&moc).map_err(AssetLoadError::Moc3)?;
     let ids = Moc3Ids::parse(&moc).map_err(AssetLoadError::Moc3)?;
     let offscreen = Moc3OffscreenInfo::parse(&moc).map_err(AssetLoadError::Moc3)?;
+    let glues = Moc3Glues::parse(&moc).map_err(AssetLoadError::Moc3)?;
     let parts = Moc3Parts::parse(&moc).map_err(AssetLoadError::Moc3)?;
     let canvas = Moc3CanvasInfo::parse(&moc).map_err(AssetLoadError::Moc3)?;
     let draw_order_groups = Moc3DrawOrderGroups::parse(&moc).map_err(AssetLoadError::Moc3)?;
@@ -225,6 +236,7 @@ fn parse_model(path: impl AsRef<Path>) -> Result<ParsedModel, AssetLoadError> {
         bindings,
         ids,
         offscreen,
+        glues,
         parts,
         draw_order_groups,
         pose,

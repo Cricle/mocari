@@ -162,6 +162,10 @@ impl Moc3DrawableMesh {
         &self.vertices
     }
 
+    pub(crate) fn vertices_mut(&mut self) -> &mut [Moc3DrawableVertex] {
+        &mut self.vertices
+    }
+
     pub fn indices(&self) -> &[u16] {
         &self.indices
     }

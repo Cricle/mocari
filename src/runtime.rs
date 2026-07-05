@@ -5,7 +5,7 @@ use crate::{
     json::{Model3, Pose3, copy_pose_link_opacities, update_pose_group_opacities},
     moc3::{
         Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3CanvasInfo, Moc3Deformers, Moc3DrawOrderGroups,
-        Moc3DrawableMesh, Moc3Ids, Moc3KeyformBindings, Moc3OffscreenInfo, Moc3Parts,
+        Moc3DrawableMesh, Moc3Glues, Moc3Ids, Moc3KeyformBindings, Moc3OffscreenInfo, Moc3Parts,
         build_moc3_drawable_meshes_with_parameters_offscreen_and_part_opacities,
     },
 };
@@ -26,6 +26,7 @@ pub struct ModelRuntime {
     bindings: Moc3KeyformBindings,
     ids: Moc3Ids,
     offscreen: Moc3OffscreenInfo,
+    glues: Moc3Glues,
     parts: Moc3Parts,
     draw_order_groups: Option<Moc3DrawOrderGroups>,
     parameter_index: HashMap<String, usize>,
@@ -50,6 +51,7 @@ impl ModelRuntime {
         bindings: Moc3KeyformBindings,
         ids: Moc3Ids,
         offscreen: Moc3OffscreenInfo,
+        glues: Moc3Glues,
         parts: Moc3Parts,
         draw_order_groups: Option<Moc3DrawOrderGroups>,
         pose: Option<Pose3>,
@@ -88,6 +90,7 @@ impl ModelRuntime {
             bindings,
             ids,
             offscreen,
+            glues,
             parts,
             draw_order_groups,
             parameter_index,
@@ -285,6 +288,8 @@ impl ModelRuntime {
             &self.parameter_values,
             &drawable_part_opacities,
         )?;
+        self.glues
+            .apply(&mut self.meshes, &self.bindings, &self.parameter_values)?;
         self.apply_group_render_orders();
         Some(())
     }
