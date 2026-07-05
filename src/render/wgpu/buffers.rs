@@ -1,8 +1,10 @@
+use std::fmt;
+
 use wgpu::util::DeviceExt;
 
 use crate::moc3::{Moc3DrawableBlendMode, Moc3DrawableMesh};
 use crate::render::common::{
-    ClippingRect, DrawableInfo, DrawableVertex, draw_order_indices, encode_indices,
+    ClippingRect, DrawableInfo, DrawableVertex, draw_order_indices_from, encode_indices,
     encode_vertices, vertices_from_drawable,
 };
 
@@ -48,6 +50,7 @@ pub struct WgpuDrawableBuffers {
     index_buffer: wgpu::Buffer,
     vertex_count: u32,
     index_count: u32,
+    indices: Vec<u16>,
     info: DrawableInfo,
 }
 
@@ -110,6 +113,106 @@ pub struct WgpuMeshBuffers {
     drawables: Vec<WgpuDrawableBuffers>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WgpuMeshUpdateError {
+    DrawableCount {
+        expected: usize,
+        actual: usize,
+    },
+    VertexCount {
+        drawable_index: usize,
+        expected: usize,
+        actual: usize,
+    },
+    IndexCount {
+        drawable_index: usize,
+        expected: usize,
+        actual: usize,
+    },
+    Indices {
+        drawable_index: usize,
+    },
+    TextureIndex {
+        drawable_index: usize,
+        expected: i32,
+        actual: i32,
+    },
+    BlendMode {
+        drawable_index: usize,
+        expected: Moc3DrawableBlendMode,
+        actual: Moc3DrawableBlendMode,
+    },
+    Masks {
+        drawable_index: usize,
+    },
+    InvertedMask {
+        drawable_index: usize,
+        expected: bool,
+        actual: bool,
+    },
+}
+
+impl fmt::Display for WgpuMeshUpdateError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DrawableCount { expected, actual } => {
+                write!(
+                    formatter,
+                    "drawable count changed from {expected} to {actual}"
+                )
+            }
+            Self::VertexCount {
+                drawable_index,
+                expected,
+                actual,
+            } => write!(
+                formatter,
+                "drawable {drawable_index} vertex count changed from {expected} to {actual}"
+            ),
+            Self::IndexCount {
+                drawable_index,
+                expected,
+                actual,
+            } => write!(
+                formatter,
+                "drawable {drawable_index} index count changed from {expected} to {actual}"
+            ),
+            Self::Indices { drawable_index } => {
+                write!(formatter, "drawable {drawable_index} indices changed")
+            }
+            Self::TextureIndex {
+                drawable_index,
+                expected,
+                actual,
+            } => write!(
+                formatter,
+                "drawable {drawable_index} texture index changed from {expected} to {actual}"
+            ),
+            Self::BlendMode {
+                drawable_index,
+                expected,
+                actual,
+            } => write!(
+                formatter,
+                "drawable {drawable_index} blend mode changed from {expected:?} to {actual:?}"
+            ),
+            Self::Masks { drawable_index } => {
+                write!(formatter, "drawable {drawable_index} masks changed")
+            }
+            Self::InvertedMask {
+                drawable_index,
+                expected,
+                actual,
+            } => write!(
+                formatter,
+                "drawable {drawable_index} inverted mask changed from {expected} to {actual}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for WgpuMeshUpdateError {}
+
 impl WgpuMeshBuffers {
     pub fn from_drawables(device: &wgpu::Device, meshes: &[Moc3DrawableMesh]) -> Option<Self> {
         let mut drawables = Vec::with_capacity(meshes.len());
@@ -129,7 +232,127 @@ impl WgpuMeshBuffers {
     }
 
     pub fn draw_order_indices(&self) -> Vec<usize> {
-        draw_order_indices(&self.drawable_infos())
+        draw_order_indices_from(
+            self.drawables.len(),
+            |index| self.drawables[index].draw_order(),
+            |index| self.drawables[index].render_order(),
+        )
+    }
+
+    pub fn update_drawables(
+        &mut self,
+        queue: &wgpu::Queue,
+        meshes: &[Moc3DrawableMesh],
+    ) -> Result<(), WgpuMeshUpdateError> {
+        if self.drawables.len() != meshes.len() {
+            return Err(WgpuMeshUpdateError::DrawableCount {
+                expected: self.drawables.len(),
+                actual: meshes.len(),
+            });
+        }
+
+        for (drawable_index, (drawable, mesh)) in self.drawables.iter().zip(meshes).enumerate() {
+            validate_drawable_update(drawable_index, drawable, mesh)?;
+        }
+
+        for (drawable, mesh) in self.drawables.iter_mut().zip(meshes) {
+            let vertices = vertices_from_drawable(mesh);
+            let vertex_bytes = encode_vertices(&vertices);
+            if !vertex_bytes.is_empty() {
+                queue.write_buffer(&drawable.vertex_buffer, 0, &vertex_bytes);
+            }
+            drawable.info = DrawableInfo::from_mesh(mesh);
+        }
+
+        Ok(())
+    }
+}
+
+fn validate_drawable_update(
+    drawable_index: usize,
+    drawable: &WgpuDrawableBuffers,
+    mesh: &Moc3DrawableMesh,
+) -> Result<(), WgpuMeshUpdateError> {
+    validate_count(
+        drawable.vertex_count as usize,
+        mesh.vertices().len(),
+        WgpuMeshUpdateError::VertexCount {
+            drawable_index,
+            expected: drawable.vertex_count as usize,
+            actual: mesh.vertices().len(),
+        },
+    )?;
+    validate_count(
+        drawable.index_count as usize,
+        mesh.indices().len(),
+        WgpuMeshUpdateError::IndexCount {
+            drawable_index,
+            expected: drawable.index_count as usize,
+            actual: mesh.indices().len(),
+        },
+    )?;
+    validate_unchanged(
+        drawable.indices.as_slice(),
+        mesh.indices(),
+        WgpuMeshUpdateError::Indices { drawable_index },
+    )?;
+    validate_unchanged(
+        &drawable.texture_index(),
+        &mesh.texture_index(),
+        WgpuMeshUpdateError::TextureIndex {
+            drawable_index,
+            expected: drawable.texture_index(),
+            actual: mesh.texture_index(),
+        },
+    )?;
+    validate_unchanged(
+        &drawable.blend_mode(),
+        &mesh.blend_mode(),
+        WgpuMeshUpdateError::BlendMode {
+            drawable_index,
+            expected: drawable.blend_mode(),
+            actual: mesh.blend_mode(),
+        },
+    )?;
+    validate_unchanged(
+        drawable.masks(),
+        mesh.masks(),
+        WgpuMeshUpdateError::Masks { drawable_index },
+    )?;
+    validate_unchanged(
+        &drawable.inverted_mask(),
+        &mesh.is_inverted_mask(),
+        WgpuMeshUpdateError::InvertedMask {
+            drawable_index,
+            expected: drawable.inverted_mask(),
+            actual: mesh.is_inverted_mask(),
+        },
+    )?;
+
+    Ok(())
+}
+
+fn validate_count(
+    expected: usize,
+    actual: usize,
+    error: WgpuMeshUpdateError,
+) -> Result<(), WgpuMeshUpdateError> {
+    if expected == actual {
+        Ok(())
+    } else {
+        Err(error)
+    }
+}
+
+fn validate_unchanged<T: PartialEq + ?Sized>(
+    expected: &T,
+    actual: &T,
+    error: WgpuMeshUpdateError,
+) -> Result<(), WgpuMeshUpdateError> {
+    if expected == actual {
+        Ok(())
+    } else {
+        Err(error)
     }
 }
 
@@ -146,7 +369,7 @@ pub fn create_wgpu_drawable_buffers(
     let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("live2d.drawable.vertices"),
         contents: &vertex_bytes,
-        usage: wgpu::BufferUsages::VERTEX,
+        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
     });
     let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("live2d.drawable.indices"),
@@ -159,6 +382,7 @@ pub fn create_wgpu_drawable_buffers(
         index_buffer,
         vertex_count,
         index_count,
+        indices: mesh.indices().to_vec(),
         info: DrawableInfo::from_mesh(mesh),
     })
 }

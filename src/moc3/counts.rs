@@ -1,6 +1,6 @@
 use crate::{Error, Result};
 
-use super::{Endianness, Moc3Header, Moc3SectionOffsets};
+use super::{Moc3Header, Moc3SectionOffsets, parse::read_u32};
 
 const U32_SIZE: usize = 4;
 
@@ -175,20 +175,6 @@ impl Moc3CountInfo {
 
     pub fn keyform_screen_colors(&self) -> u32 {
         self.keyform_screen_colors
-    }
-}
-
-fn read_u32(bytes: &[u8], offset: usize, endianness: Endianness) -> u32 {
-    let raw = [
-        bytes[offset],
-        bytes[offset + 1],
-        bytes[offset + 2],
-        bytes[offset + 3],
-    ];
-
-    match endianness {
-        Endianness::Little => u32::from_le_bytes(raw),
-        Endianness::Big => u32::from_be_bytes(raw),
     }
 }
 

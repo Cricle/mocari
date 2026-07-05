@@ -3,8 +3,8 @@ use crate::Result;
 use super::{
     Moc3CountInfo, Moc3Header, Moc3SectionOffsets,
     parse::{
-        invalid_moc3, read_f32_section, read_i16_section, read_i32_section,
-        read_i32_section_or_default, read_u8_section, to_usize,
+        invalid_moc3, nonnegative_range_len, read_f32_section, read_i16_section, read_i32_section,
+        read_i32_section_or_default, read_u8_section, to_usize, validate_art_mesh_range,
     },
 };
 
@@ -375,10 +375,10 @@ fn validate_mesh_ranges(
     drawable_mask_count: usize,
 ) -> Result<()> {
     let uv_len = nonnegative_range_len(mesh.vertex_count, 2, "vertex count")?;
-    validate_range(mesh.uv_begin_index, uv_len, uv_count, index, "uv")?;
+    validate_art_mesh_range(mesh.uv_begin_index, uv_len, uv_count, index, "uv")?;
 
     let position_len = nonnegative_range_len(mesh.position_index_count, 1, "position index count")?;
-    validate_range(
+    validate_art_mesh_range(
         mesh.position_index_begin_index,
         position_len,
         position_index_count,
@@ -387,50 +387,11 @@ fn validate_mesh_ranges(
     )?;
 
     let mask_len = nonnegative_range_len(mesh.mask_count, 1, "mask count")?;
-    validate_range(
+    validate_art_mesh_range(
         mesh.mask_begin_index,
         mask_len,
         drawable_mask_count,
         index,
         "mask",
     )
-}
-
-fn nonnegative_range_len(value: i32, scale: usize, name: &'static str) -> Result<usize> {
-    if value < 0 {
-        return Err(invalid_moc3(format!("{name} is negative")));
-    }
-
-    usize::try_from(value)
-        .ok()
-        .and_then(|value| value.checked_mul(scale))
-        .ok_or_else(|| invalid_moc3(format!("{name} range size overflows")))
-}
-
-fn validate_range(
-    begin: i32,
-    len: usize,
-    source_len: usize,
-    mesh_index: usize,
-    name: &'static str,
-) -> Result<()> {
-    if begin < 0 {
-        return Err(invalid_moc3(format!(
-            "art mesh {mesh_index} {name} begin index is negative"
-        )));
-    }
-
-    let begin = usize::try_from(begin)
-        .map_err(|_| invalid_moc3(format!("art mesh {mesh_index} {name} begin is too large")))?;
-    let end = begin
-        .checked_add(len)
-        .ok_or_else(|| invalid_moc3(format!("art mesh {mesh_index} {name} range overflows")))?;
-
-    if end > source_len {
-        return Err(invalid_moc3(format!(
-            "art mesh {mesh_index} {name} range is outside section"
-        )));
-    }
-
-    Ok(())
 }

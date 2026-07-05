@@ -8,14 +8,8 @@ pub fn affect_art_mesh_pair(
     glue_opacity: f32,
 ) -> (Vector2, Vector2) {
     (
-        Vector2::new(
-            a.x() + (b.x() - a.x()) * weight_a * glue_opacity,
-            a.y() + (b.y() - a.y()) * weight_a * glue_opacity,
-        ),
-        Vector2::new(
-            b.x() + (a.x() - b.x()) * weight_b * glue_opacity,
-            b.y() + (a.y() - b.y()) * weight_b * glue_opacity,
-        ),
+        a.lerp(b, weight_a * glue_opacity),
+        b.lerp(a, weight_b * glue_opacity),
     )
 }
 

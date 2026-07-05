@@ -61,33 +61,43 @@ impl DrawableInfo {
 }
 
 pub fn draw_order_indices(drawables: &[DrawableInfo]) -> Vec<usize> {
-    let mut indices = (0..drawables.len()).collect::<Vec<_>>();
-    if render_orders_are_total_rank(drawables) {
-        indices.sort_by_key(|&index| drawables[index].render_order);
+    draw_order_indices_from(
+        drawables.len(),
+        |index| drawables[index].draw_order,
+        |index| drawables[index].render_order,
+    )
+}
+
+pub(crate) fn draw_order_indices_from(
+    count: usize,
+    mut draw_order: impl FnMut(usize) -> f32,
+    mut render_order: impl FnMut(usize) -> i32,
+) -> Vec<usize> {
+    let mut indices = (0..count).collect::<Vec<_>>();
+    if render_orders_are_total_rank_from(count, &mut render_order) {
+        indices.sort_by_key(|&index| render_order(index));
         return indices;
     }
     indices.sort_by(|left, right| {
-        draw_order_from_raw(drawables[*left].draw_order)
-            .cmp(&draw_order_from_raw(drawables[*right].draw_order))
-            .then_with(|| {
-                drawables[*left]
-                    .render_order
-                    .cmp(&drawables[*right].render_order)
-            })
+        draw_order_from_raw(draw_order(*left))
+            .cmp(&draw_order_from_raw(draw_order(*right)))
+            .then_with(|| render_order(*left).cmp(&render_order(*right)))
             .then_with(|| left.cmp(right))
     });
     indices
 }
 
-fn render_orders_are_total_rank(drawables: &[DrawableInfo]) -> bool {
-    let count = drawables.len();
+fn render_orders_are_total_rank_from(
+    count: usize,
+    render_order: &mut impl FnMut(usize) -> i32,
+) -> bool {
     if count == 0 {
         return false;
     }
     let mut seen = vec![false; count];
     let mut identity = true;
-    for (index, drawable) in drawables.iter().enumerate() {
-        let Ok(rank) = usize::try_from(drawable.render_order) else {
+    for index in 0..count {
+        let Ok(rank) = usize::try_from(render_order(index)) else {
             return false;
         };
         match seen.get_mut(rank) {

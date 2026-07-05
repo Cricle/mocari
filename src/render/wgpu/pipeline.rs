@@ -46,57 +46,43 @@ pub fn preferred_surface_format(formats: &[wgpu::TextureFormat]) -> Option<wgpu:
 
 pub fn live2d_blend_state(blend_mode: Moc3DrawableBlendMode) -> wgpu::BlendState {
     match blend_mode {
-        Moc3DrawableBlendMode::Normal => wgpu::BlendState {
-            color: wgpu::BlendComponent {
-                src_factor: wgpu::BlendFactor::One,
-                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                operation: wgpu::BlendOperation::Add,
-            },
-            alpha: wgpu::BlendComponent {
-                src_factor: wgpu::BlendFactor::One,
-                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                operation: wgpu::BlendOperation::Add,
-            },
-        },
-        Moc3DrawableBlendMode::Additive => wgpu::BlendState {
-            color: wgpu::BlendComponent {
-                src_factor: wgpu::BlendFactor::One,
-                dst_factor: wgpu::BlendFactor::One,
-                operation: wgpu::BlendOperation::Add,
-            },
-            alpha: wgpu::BlendComponent {
-                src_factor: wgpu::BlendFactor::Zero,
-                dst_factor: wgpu::BlendFactor::One,
-                operation: wgpu::BlendOperation::Add,
-            },
-        },
-        Moc3DrawableBlendMode::Multiplicative => wgpu::BlendState {
-            color: wgpu::BlendComponent {
-                src_factor: wgpu::BlendFactor::Dst,
-                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                operation: wgpu::BlendOperation::Add,
-            },
-            alpha: wgpu::BlendComponent {
-                src_factor: wgpu::BlendFactor::Zero,
-                dst_factor: wgpu::BlendFactor::One,
-                operation: wgpu::BlendOperation::Add,
-            },
-        },
+        Moc3DrawableBlendMode::Normal => blend_state(
+            (wgpu::BlendFactor::One, wgpu::BlendFactor::OneMinusSrcAlpha),
+            (wgpu::BlendFactor::One, wgpu::BlendFactor::OneMinusSrcAlpha),
+        ),
+        Moc3DrawableBlendMode::Additive => blend_state(
+            (wgpu::BlendFactor::One, wgpu::BlendFactor::One),
+            (wgpu::BlendFactor::Zero, wgpu::BlendFactor::One),
+        ),
+        Moc3DrawableBlendMode::Multiplicative => blend_state(
+            (wgpu::BlendFactor::Dst, wgpu::BlendFactor::OneMinusSrcAlpha),
+            (wgpu::BlendFactor::Zero, wgpu::BlendFactor::One),
+        ),
     }
 }
 
 pub fn wgpu_mask_blend_state() -> wgpu::BlendState {
+    blend_state(
+        (wgpu::BlendFactor::One, wgpu::BlendFactor::One),
+        (wgpu::BlendFactor::One, wgpu::BlendFactor::One),
+    )
+}
+
+fn blend_state(
+    color: (wgpu::BlendFactor, wgpu::BlendFactor),
+    alpha: (wgpu::BlendFactor, wgpu::BlendFactor),
+) -> wgpu::BlendState {
     wgpu::BlendState {
-        color: wgpu::BlendComponent {
-            src_factor: wgpu::BlendFactor::One,
-            dst_factor: wgpu::BlendFactor::One,
-            operation: wgpu::BlendOperation::Add,
-        },
-        alpha: wgpu::BlendComponent {
-            src_factor: wgpu::BlendFactor::One,
-            dst_factor: wgpu::BlendFactor::One,
-            operation: wgpu::BlendOperation::Add,
-        },
+        color: blend_component(color),
+        alpha: blend_component(alpha),
+    }
+}
+
+fn blend_component(factors: (wgpu::BlendFactor, wgpu::BlendFactor)) -> wgpu::BlendComponent {
+    wgpu::BlendComponent {
+        src_factor: factors.0,
+        dst_factor: factors.1,
+        operation: wgpu::BlendOperation::Add,
     }
 }
 
@@ -548,37 +534,14 @@ fn create_live2d_pipeline(
     blend_mode: Moc3DrawableBlendMode,
     label: &'static str,
 ) -> wgpu::RenderPipeline {
-    let vertex_buffers = [Some(drawable_vertex_layout())];
-    let color_targets = [Some(wgpu::ColorTargetState {
-        format: color_format,
-        blend: Some(live2d_blend_state(blend_mode)),
-        write_mask: wgpu::ColorWrites::ALL,
-    })];
-
-    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some(label),
-        layout: Some(pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: shader,
-            entry_point: Some("vs_main"),
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-            buffers: &vertex_buffers,
-        },
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            ..Default::default()
-        },
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
-        fragment: Some(wgpu::FragmentState {
-            module: shader,
-            entry_point: Some("fs_main"),
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-            targets: &color_targets,
-        }),
-        multiview_mask: None,
-        cache: None,
-    })
+    create_textured_triangle_pipeline(
+        device,
+        pipeline_layout,
+        shader,
+        color_format,
+        live2d_blend_state(blend_mode),
+        label,
+    )
 }
 
 fn create_live2d_mask_pipeline(
@@ -587,10 +550,28 @@ fn create_live2d_mask_pipeline(
     shader: &wgpu::ShaderModule,
     label: &'static str,
 ) -> wgpu::RenderPipeline {
+    create_textured_triangle_pipeline(
+        device,
+        pipeline_layout,
+        shader,
+        wgpu::TextureFormat::Rgba8Unorm,
+        wgpu_mask_blend_state(),
+        label,
+    )
+}
+
+fn create_textured_triangle_pipeline(
+    device: &wgpu::Device,
+    pipeline_layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    color_format: wgpu::TextureFormat,
+    blend_state: wgpu::BlendState,
+    label: &'static str,
+) -> wgpu::RenderPipeline {
     let vertex_buffers = [Some(drawable_vertex_layout())];
     let color_targets = [Some(wgpu::ColorTargetState {
-        format: wgpu::TextureFormat::Rgba8Unorm,
-        blend: Some(wgpu_mask_blend_state()),
+        format: color_format,
+        blend: Some(blend_state),
         write_mask: wgpu::ColorWrites::ALL,
     })];
 

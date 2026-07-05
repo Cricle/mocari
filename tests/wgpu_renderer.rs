@@ -619,6 +619,71 @@ fn mesh_buffers_quantize_draw_order_to_avoid_flicker() {
 }
 
 #[test]
+fn mesh_buffers_update_drawables_reuses_topology_and_refreshes_draw_info() {
+    let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let original = test_mesh_with_render_order(0, 20.0, 1);
+    let updated = Moc3DrawableMesh::from_parts_with_render_order(
+        0,
+        0,
+        0.25,
+        10.0,
+        0,
+        vec![
+            Moc3DrawableVertex::new([-1.0, -1.5], [0.0, 1.0]),
+            Moc3DrawableVertex::new([0.5, -0.5], [1.0, 1.0]),
+            Moc3DrawableVertex::new([0.0, 0.5], [0.5, 0.0]),
+        ],
+        vec![0, 1, 2],
+        Vec::new(),
+    );
+    let mut buffers = WgpuMeshBuffers::from_drawables(&device, &[original]).unwrap();
+
+    buffers
+        .update_drawables(&queue, std::slice::from_ref(&updated))
+        .unwrap();
+
+    let drawable = &buffers.drawables()[0];
+    assert_eq!(drawable.index_count(), 3);
+    assert_f32_close(drawable.opacity(), 0.25);
+    assert_f32_close(drawable.draw_order(), 10.0);
+    assert_eq!(drawable.render_order(), 0);
+    assert_rect_close(
+        drawable.bounds().unwrap(),
+        WgpuClippingRect::new(-1.0, -1.5, 1.5, 2.0),
+    );
+    assert_eq!(buffers.draw_order_indices(), vec![0]);
+}
+
+#[test]
+fn mesh_buffers_update_drawables_rejects_topology_changes() {
+    let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let original = test_mesh_with_draw_order(0, 0.0);
+    let mut buffers = WgpuMeshBuffers::from_drawables(&device, &[original]).unwrap();
+    let changed_indices = Moc3DrawableMesh::from_parts(
+        0,
+        0,
+        1.0,
+        0.0,
+        vec![
+            Moc3DrawableVertex::new([-0.5, -0.5], [0.0, 1.0]),
+            Moc3DrawableVertex::new([0.5, -0.5], [1.0, 1.0]),
+            Moc3DrawableVertex::new([0.0, 0.5], [0.5, 0.0]),
+        ],
+        vec![0, 2, 1],
+        Vec::new(),
+    );
+
+    let error = buffers
+        .update_drawables(&queue, std::slice::from_ref(&changed_indices))
+        .unwrap_err();
+
+    assert_eq!(
+        error,
+        mocari::render::wgpu::WgpuMeshUpdateError::Indices { drawable_index: 0 }
+    );
+}
+
+#[test]
 fn draw_returns_error_for_missing_texture_bind_group() {
     let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
     let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);

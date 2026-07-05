@@ -3,8 +3,8 @@ use crate::Result;
 use super::{
     Moc3CountInfo, Moc3Header, Moc3SectionOffsets,
     parse::{
-        invalid_moc3, read_f32_section, read_f32_section_or_default, read_i32_section,
-        read_i32_section_or_default, to_usize,
+        invalid_moc3, nonnegative_range_len, read_f32_section, read_f32_section_or_default,
+        read_i32_section, read_i32_section_or_default, to_usize, validate_art_mesh_range,
     },
 };
 
@@ -321,7 +321,7 @@ fn validate_keyform_ranges(
     position_count: usize,
 ) -> Result<()> {
     let keyform_len = nonnegative_range_len(keyform_count, 1, "art mesh keyform count")?;
-    validate_range(
+    validate_art_mesh_range(
         keyform_begin_index,
         keyform_len,
         keyforms.len(),
@@ -337,52 +337,13 @@ fn validate_keyform_ranges(
     let position_len = nonnegative_range_len(vertex_count, 2, "vertex count")?;
 
     for keyform in keyforms.iter().skip(keyform_begin_index).take(keyform_len) {
-        validate_range(
+        validate_art_mesh_range(
             keyform.position_begin_index,
             position_len,
             position_count,
             mesh_index,
             "keyform position",
         )?;
-    }
-
-    Ok(())
-}
-
-fn nonnegative_range_len(value: i32, scale: usize, name: &'static str) -> Result<usize> {
-    if value < 0 {
-        return Err(invalid_moc3(format!("{name} is negative")));
-    }
-
-    usize::try_from(value)
-        .ok()
-        .and_then(|value| value.checked_mul(scale))
-        .ok_or_else(|| invalid_moc3(format!("{name} range size overflows")))
-}
-
-fn validate_range(
-    begin: i32,
-    len: usize,
-    source_len: usize,
-    mesh_index: usize,
-    name: &'static str,
-) -> Result<()> {
-    if begin < 0 {
-        return Err(invalid_moc3(format!(
-            "art mesh {mesh_index} {name} begin index is negative"
-        )));
-    }
-
-    let begin = usize::try_from(begin)
-        .map_err(|_| invalid_moc3(format!("art mesh {mesh_index} {name} begin is too large")))?;
-    let end = begin
-        .checked_add(len)
-        .ok_or_else(|| invalid_moc3(format!("art mesh {mesh_index} {name} range overflows")))?;
-
-    if end > source_len {
-        return Err(invalid_moc3(format!(
-            "art mesh {mesh_index} {name} range is outside section"
-        )));
     }
 
     Ok(())

@@ -18,6 +18,20 @@ impl Vector2 {
     pub fn y(&self) -> f32 {
         self.y
     }
+
+    pub fn lerp(self, to: Self, weight: f32) -> Self {
+        Self::new(
+            self.x + (to.x - self.x) * weight,
+            self.y + (to.y - self.y) * weight,
+        )
+    }
+
+    pub fn affine2(origin: Self, u: Self, u_weight: f32, v: Self, v_weight: f32) -> Self {
+        Self::new(
+            origin.x + (u.x - origin.x) * u_weight + (v.x - origin.x) * v_weight,
+            origin.y + (u.y - origin.y) * u_weight + (v.y - origin.y) * v_weight,
+        )
+    }
 }
 
 pub fn degrees_to_radian(degrees: f32) -> f32 {

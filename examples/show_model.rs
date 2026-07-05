@@ -46,6 +46,56 @@ const TEXT_HEIGHT_PX: f32 = 22.0;
 const TEXT_RGBA: [u8; 4] = [232, 238, 242, 255];
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum ButtonAction {
+    SwitchModel,
+    PlayMotion,
+    PlayExpression,
+    PreviousParameter,
+    NextParameter,
+    ResetParameter,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct ButtonSpec {
+    action: ButtonAction,
+    label: &'static str,
+    top: f64,
+}
+
+const BUTTON_SPECS: &[ButtonSpec] = &[
+    ButtonSpec {
+        action: ButtonAction::SwitchModel,
+        label: "Switch Model",
+        top: SWITCH_BUTTON_Y,
+    },
+    ButtonSpec {
+        action: ButtonAction::PlayMotion,
+        label: "Play Motion",
+        top: MOTION_BUTTON_Y,
+    },
+    ButtonSpec {
+        action: ButtonAction::PlayExpression,
+        label: "Play Expression",
+        top: EXPRESSION_BUTTON_Y,
+    },
+    ButtonSpec {
+        action: ButtonAction::PreviousParameter,
+        label: "Prev Param",
+        top: PREV_PARAMETER_BUTTON_Y,
+    },
+    ButtonSpec {
+        action: ButtonAction::NextParameter,
+        label: "Next Param",
+        top: NEXT_PARAMETER_BUTTON_Y,
+    },
+    ButtonSpec {
+        action: ButtonAction::ResetParameter,
+        label: "Reset Param",
+        top: RESET_PARAMETER_BUTTON_Y,
+    },
+];
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct ModelSpec {
     name: &'static str,
     path: &'static str,
@@ -211,18 +261,8 @@ struct WindowState {
     model: LoadedModel,
     button_buffers: WgpuMeshBuffers,
     button_texture: WgpuTexture,
-    switch_transform: WgpuTransform,
-    motion_transform: WgpuTransform,
-    expression_transform: WgpuTransform,
-    prev_parameter_transform: WgpuTransform,
-    next_parameter_transform: WgpuTransform,
-    reset_parameter_transform: WgpuTransform,
-    switch_label: LabelQuad,
-    motion_label: LabelQuad,
-    expression_label: LabelQuad,
-    prev_parameter_label: LabelQuad,
-    next_parameter_label: LabelQuad,
-    reset_parameter_label: LabelQuad,
+    button_uis: Vec<ButtonUi>,
+    ui_transform: WgpuTransform,
     parameter_label: LabelQuad,
     slider_track_buffers: WgpuMeshBuffers,
     slider_fill_buffers: WgpuMeshBuffers,
@@ -252,6 +292,11 @@ struct LoadedModel {
 struct LabelQuad {
     buffers: WgpuMeshBuffers,
     texture: WgpuTexture,
+}
+
+struct ButtonUi {
+    transform: WgpuTransform,
+    label: LabelQuad,
 }
 
 impl WindowState {
@@ -291,77 +336,8 @@ impl WindowState {
             load_rendered_model(&renderer, &device, &queue, MODEL_SPECS[model_index], size)?;
         let button_buffers = create_button_quad_buffers(&device, size, SWITCH_BUTTON_Y)?;
         let button_texture = renderer.create_rgba8_texture(&device, &queue, 1, 1, BUTTON_RGBA)?;
-        let switch_transform = renderer.create_transform(&device, &Matrix44::identity());
-        let motion_transform =
-            renderer.create_transform(&device, &button_offset_matrix(size, MOTION_BUTTON_Y));
-        let expression_transform =
-            renderer.create_transform(&device, &button_offset_matrix(size, EXPRESSION_BUTTON_Y));
-        let prev_parameter_transform = renderer.create_transform(
-            &device,
-            &button_offset_matrix(size, PREV_PARAMETER_BUTTON_Y),
-        );
-        let next_parameter_transform = renderer.create_transform(
-            &device,
-            &button_offset_matrix(size, NEXT_PARAMETER_BUTTON_Y),
-        );
-        let reset_parameter_transform = renderer.create_transform(
-            &device,
-            &button_offset_matrix(size, RESET_PARAMETER_BUTTON_Y),
-        );
-        let switch_label = create_label_quad(
-            &renderer,
-            &device,
-            &queue,
-            &font,
-            "Switch Model",
-            size,
-            SWITCH_BUTTON_Y,
-        )?;
-        let motion_label = create_label_quad(
-            &renderer,
-            &device,
-            &queue,
-            &font,
-            "Play Motion",
-            size,
-            MOTION_BUTTON_Y,
-        )?;
-        let expression_label = create_label_quad(
-            &renderer,
-            &device,
-            &queue,
-            &font,
-            "Play Expression",
-            size,
-            EXPRESSION_BUTTON_Y,
-        )?;
-        let prev_parameter_label = create_label_quad(
-            &renderer,
-            &device,
-            &queue,
-            &font,
-            "Prev Param",
-            size,
-            PREV_PARAMETER_BUTTON_Y,
-        )?;
-        let next_parameter_label = create_label_quad(
-            &renderer,
-            &device,
-            &queue,
-            &font,
-            "Next Param",
-            size,
-            NEXT_PARAMETER_BUTTON_Y,
-        )?;
-        let reset_parameter_label = create_label_quad(
-            &renderer,
-            &device,
-            &queue,
-            &font,
-            "Reset Param",
-            size,
-            RESET_PARAMETER_BUTTON_Y,
-        )?;
+        let button_uis = create_button_uis(&renderer, &device, &queue, &font, size)?;
+        let ui_transform = renderer.create_transform(&device, &Matrix44::identity());
         let selected_parameter_index = initial_parameter_selection(&model.runtime);
         let parameter_label = create_parameter_label_quad(
             &renderer,
@@ -396,18 +372,8 @@ impl WindowState {
             model,
             button_buffers,
             button_texture,
-            switch_transform,
-            motion_transform,
-            expression_transform,
-            prev_parameter_transform,
-            next_parameter_transform,
-            reset_parameter_transform,
-            switch_label,
-            motion_label,
-            expression_label,
-            prev_parameter_label,
-            next_parameter_label,
-            reset_parameter_label,
+            button_uis,
+            ui_transform,
             parameter_label,
             slider_track_buffers,
             slider_fill_buffers,
@@ -434,88 +400,19 @@ impl WindowState {
             &fit_model_matrix(self.model.model_bounds, size),
         );
         self.button_buffers = create_button_quad_buffers(&self.device, size, SWITCH_BUTTON_Y)?;
-        self.motion_transform = self
-            .renderer
-            .create_transform(&self.device, &button_offset_matrix(size, MOTION_BUTTON_Y));
-        self.expression_transform = self.renderer.create_transform(
-            &self.device,
-            &button_offset_matrix(size, EXPRESSION_BUTTON_Y),
-        );
-        self.prev_parameter_transform = self.renderer.create_transform(
-            &self.device,
-            &button_offset_matrix(size, PREV_PARAMETER_BUTTON_Y),
-        );
-        self.next_parameter_transform = self.renderer.create_transform(
-            &self.device,
-            &button_offset_matrix(size, NEXT_PARAMETER_BUTTON_Y),
-        );
-        self.reset_parameter_transform = self.renderer.create_transform(
-            &self.device,
-            &button_offset_matrix(size, RESET_PARAMETER_BUTTON_Y),
-        );
-        self.switch_label = create_label_quad(
-            &self.renderer,
-            &self.device,
-            &self.queue,
-            &self.font,
-            "Switch Model",
-            size,
-            SWITCH_BUTTON_Y,
-        )?;
-        self.motion_label = create_label_quad(
-            &self.renderer,
-            &self.device,
-            &self.queue,
-            &self.font,
-            "Play Motion",
-            size,
-            MOTION_BUTTON_Y,
-        )?;
-        self.expression_label = create_label_quad(
-            &self.renderer,
-            &self.device,
-            &self.queue,
-            &self.font,
-            "Play Expression",
-            size,
-            EXPRESSION_BUTTON_Y,
-        )?;
-        self.prev_parameter_label = create_label_quad(
-            &self.renderer,
-            &self.device,
-            &self.queue,
-            &self.font,
-            "Prev Param",
-            size,
-            PREV_PARAMETER_BUTTON_Y,
-        )?;
-        self.next_parameter_label = create_label_quad(
-            &self.renderer,
-            &self.device,
-            &self.queue,
-            &self.font,
-            "Next Param",
-            size,
-            NEXT_PARAMETER_BUTTON_Y,
-        )?;
-        self.reset_parameter_label = create_label_quad(
-            &self.renderer,
-            &self.device,
-            &self.queue,
-            &self.font,
-            "Reset Param",
-            size,
-            RESET_PARAMETER_BUTTON_Y,
-        )?;
+        self.button_uis =
+            create_button_uis(&self.renderer, &self.device, &self.queue, &self.font, size)?;
         self.slider_track_buffers = create_slider_track_buffers(&self.device, size)?;
         self.refresh_parameter_controls()?;
         Ok(())
     }
 
-    fn button_hit(&self, top: f64) -> bool {
-        self.cursor_position
-            .map(|position| button_rect(top).contains(position.x, position.y))
-            .unwrap_or(false)
+    fn button_action_at_cursor(&self) -> Option<ButtonAction> {
+        let position = self.cursor_position?;
+        BUTTON_SPECS
+            .iter()
+            .find(|spec| button_rect(spec.top).contains(position.x, position.y))
+            .map(|spec| spec.action)
     }
 
     fn slider_hit(&self) -> bool {
@@ -525,18 +422,15 @@ impl WindowState {
     }
 
     fn handle_left_press(&mut self) -> Result<(), Box<dyn Error>> {
-        if self.button_hit(SWITCH_BUTTON_Y) {
-            self.switch_to_next_model()
-        } else if self.button_hit(MOTION_BUTTON_Y) {
-            self.play_random_motion()
-        } else if self.button_hit(EXPRESSION_BUTTON_Y) {
-            self.play_random_expression()
-        } else if self.button_hit(PREV_PARAMETER_BUTTON_Y) {
-            self.select_previous_parameter()
-        } else if self.button_hit(NEXT_PARAMETER_BUTTON_Y) {
-            self.select_next_parameter()
-        } else if self.button_hit(RESET_PARAMETER_BUTTON_Y) {
-            self.reset_selected_parameter()
+        if let Some(action) = self.button_action_at_cursor() {
+            match action {
+                ButtonAction::SwitchModel => self.switch_to_next_model(),
+                ButtonAction::PlayMotion => self.play_random_motion(),
+                ButtonAction::PlayExpression => self.play_random_expression(),
+                ButtonAction::PreviousParameter => self.select_previous_parameter(),
+                ButtonAction::NextParameter => self.select_next_parameter(),
+                ButtonAction::ResetParameter => self.reset_selected_parameter(),
+            }
         } else if self.slider_hit() {
             self.dragging_parameter_slider = true;
             if let Some(position) = self.cursor_position {
@@ -665,7 +559,7 @@ impl WindowState {
         if self.model.runtime.update_meshes().is_none() {
             return Err(Box::new(ExampleError("failed to rebuild model meshes")));
         }
-        rebuild_model_gpu(&self.renderer, &self.device, &mut self.model)?;
+        update_model_gpu(&self.renderer, &self.device, &self.queue, &mut self.model)?;
         Ok(())
     }
 
@@ -775,95 +669,39 @@ impl WindowState {
                 &self.model.mask_target,
                 &self.model.transform,
             )?;
-            self.renderer.draw_with_textures_and_transform(
-                &mut pass,
-                &self.button_buffers,
-                std::slice::from_ref(&self.button_texture),
-                &self.switch_transform,
-            )?;
-            self.renderer.draw_with_textures_and_transform(
-                &mut pass,
-                &self.button_buffers,
-                std::slice::from_ref(&self.button_texture),
-                &self.motion_transform,
-            )?;
-            self.renderer.draw_with_textures_and_transform(
-                &mut pass,
-                &self.button_buffers,
-                std::slice::from_ref(&self.button_texture),
-                &self.expression_transform,
-            )?;
-            self.renderer.draw_with_textures_and_transform(
-                &mut pass,
-                &self.button_buffers,
-                std::slice::from_ref(&self.button_texture),
-                &self.prev_parameter_transform,
-            )?;
-            self.renderer.draw_with_textures_and_transform(
-                &mut pass,
-                &self.button_buffers,
-                std::slice::from_ref(&self.button_texture),
-                &self.next_parameter_transform,
-            )?;
-            self.renderer.draw_with_textures_and_transform(
-                &mut pass,
-                &self.button_buffers,
-                std::slice::from_ref(&self.button_texture),
-                &self.reset_parameter_transform,
-            )?;
+            for button_ui in &self.button_uis {
+                self.renderer.draw_with_textures_and_transform(
+                    &mut pass,
+                    &self.button_buffers,
+                    std::slice::from_ref(&self.button_texture),
+                    &button_ui.transform,
+                )?;
+            }
             self.renderer.draw_with_textures_and_transform(
                 &mut pass,
                 &self.slider_track_buffers,
                 std::slice::from_ref(&self.slider_track_texture),
-                &self.switch_transform,
+                &self.ui_transform,
             )?;
             self.renderer.draw_with_textures_and_transform(
                 &mut pass,
                 &self.slider_fill_buffers,
                 std::slice::from_ref(&self.slider_fill_texture),
-                &self.switch_transform,
+                &self.ui_transform,
             )?;
-            self.renderer.draw_with_textures_and_transform(
-                &mut pass,
-                &self.switch_label.buffers,
-                std::slice::from_ref(&self.switch_label.texture),
-                &self.switch_transform,
-            )?;
-            self.renderer.draw_with_textures_and_transform(
-                &mut pass,
-                &self.motion_label.buffers,
-                std::slice::from_ref(&self.motion_label.texture),
-                &self.switch_transform,
-            )?;
-            self.renderer.draw_with_textures_and_transform(
-                &mut pass,
-                &self.expression_label.buffers,
-                std::slice::from_ref(&self.expression_label.texture),
-                &self.switch_transform,
-            )?;
-            self.renderer.draw_with_textures_and_transform(
-                &mut pass,
-                &self.prev_parameter_label.buffers,
-                std::slice::from_ref(&self.prev_parameter_label.texture),
-                &self.switch_transform,
-            )?;
-            self.renderer.draw_with_textures_and_transform(
-                &mut pass,
-                &self.next_parameter_label.buffers,
-                std::slice::from_ref(&self.next_parameter_label.texture),
-                &self.switch_transform,
-            )?;
-            self.renderer.draw_with_textures_and_transform(
-                &mut pass,
-                &self.reset_parameter_label.buffers,
-                std::slice::from_ref(&self.reset_parameter_label.texture),
-                &self.switch_transform,
-            )?;
+            for button_ui in &self.button_uis {
+                self.renderer.draw_with_textures_and_transform(
+                    &mut pass,
+                    &button_ui.label.buffers,
+                    std::slice::from_ref(&button_ui.label.texture),
+                    &self.ui_transform,
+                )?;
+            }
             self.renderer.draw_with_textures_and_transform(
                 &mut pass,
                 &self.parameter_label.buffers,
                 std::slice::from_ref(&self.parameter_label.texture),
-                &self.switch_transform,
+                &self.ui_transform,
             )?;
         }
 
@@ -990,10 +828,38 @@ fn rebuild_model_gpu(
 ) -> Result<(), Box<dyn Error>> {
     let mesh_buffers = WgpuMeshBuffers::from_drawables(device, model.runtime.meshes())
         .ok_or(ExampleError("failed to create mesh buffers"))?;
-    let mut clipping_plan = WgpuClippingPlan::from_mesh_buffers(&mesh_buffers);
-    clipping_plan.prepare_single_texture_masks(&mesh_buffers)?;
-    model.clipping_resources = renderer.create_clipping_resources(device, &clipping_plan)?;
     model.mesh_buffers = mesh_buffers;
+    rebuild_model_clipping(renderer, device, model)?;
+    Ok(())
+}
+
+fn update_model_gpu(
+    renderer: &WgpuLive2dRenderer,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    model: &mut LoadedModel,
+) -> Result<(), Box<dyn Error>> {
+    if model
+        .mesh_buffers
+        .update_drawables(queue, model.runtime.meshes())
+        .is_err()
+    {
+        return rebuild_model_gpu(renderer, device, model);
+    }
+
+    rebuild_model_clipping(renderer, device, model)?;
+    Ok(())
+}
+
+fn rebuild_model_clipping(
+    renderer: &WgpuLive2dRenderer,
+    device: &wgpu::Device,
+    model: &mut LoadedModel,
+) -> Result<(), Box<dyn Error>> {
+    let mesh_buffers = &model.mesh_buffers;
+    let mut clipping_plan = WgpuClippingPlan::from_mesh_buffers(mesh_buffers);
+    clipping_plan.prepare_single_texture_masks(mesh_buffers)?;
+    model.clipping_resources = renderer.create_clipping_resources(device, &clipping_plan)?;
     Ok(())
 }
 
@@ -1066,6 +932,32 @@ fn create_label_quad(
         .ok_or(ExampleError("failed to create label buffers"))?;
 
     Ok(LabelQuad { buffers, texture })
+}
+
+fn create_button_uis(
+    renderer: &WgpuLive2dRenderer,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    font: &FontArc,
+    surface_size: PhysicalSize<u32>,
+) -> Result<Vec<ButtonUi>, Box<dyn Error>> {
+    BUTTON_SPECS
+        .iter()
+        .map(|spec| {
+            let transform =
+                renderer.create_transform(device, &button_offset_matrix(surface_size, spec.top));
+            let label = create_label_quad(
+                renderer,
+                device,
+                queue,
+                font,
+                spec.label,
+                surface_size,
+                spec.top,
+            )?;
+            Ok(ButtonUi { transform, label })
+        })
+        .collect()
 }
 
 fn create_parameter_label_quad(

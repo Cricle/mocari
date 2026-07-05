@@ -1,6 +1,6 @@
 use crate::{Error, Result};
 
-use super::{Endianness, Moc3Header, Moc3SectionOffsets};
+use super::{Moc3Header, Moc3SectionOffsets, parse::read_f32};
 
 const CANVAS_INFO_SIZE: usize = 64;
 const F32_SIZE: usize = 4;
@@ -58,20 +58,6 @@ impl Moc3CanvasInfo {
 
     pub fn reverse_y_coordinate(&self) -> bool {
         self.flags & 1 == 1
-    }
-}
-
-fn read_f32(bytes: &[u8], offset: usize, endianness: Endianness) -> f32 {
-    let raw = [
-        bytes[offset],
-        bytes[offset + 1],
-        bytes[offset + 2],
-        bytes[offset + 3],
-    ];
-
-    match endianness {
-        Endianness::Little => f32::from_le_bytes(raw),
-        Endianness::Big => f32::from_be_bytes(raw),
     }
 }
 

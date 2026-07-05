@@ -321,10 +321,7 @@ fn triangle_interpolate(cell: &WarpCell) -> Vector2 {
 }
 
 fn bary3(a: Vector2, b: Vector2, c: Vector2, wa: f32, wb: f32, wc: f32) -> Vector2 {
-    Vector2::new(
-        wa * a.x() + wb * b.x() + wc * c.x(),
-        wa * a.y() + wb * b.y() + wc * c.y(),
-    )
+    add(add(scale(a, wa), scale(b, wb)), scale(c, wc))
 }
 
 fn add(a: Vector2, b: Vector2) -> Vector2 {
@@ -347,15 +344,7 @@ fn bilinear_cell(
     c01: Vector2,
     c11: Vector2,
 ) -> Vector2 {
-    let w00 = (1.0 - s) * (1.0 - t);
-    let w10 = s * (1.0 - t);
-    let w01 = (1.0 - s) * t;
-    let w11 = s * t;
-
-    Vector2::new(
-        w00 * c00.x() + w10 * c10.x() + w01 * c01.x() + w11 * c11.x(),
-        w00 * c00.y() + w10 * c10.y() + w01 * c01.y() + w11 * c11.y(),
-    )
+    c00.lerp(c10, s).lerp(c01.lerp(c11, s), t)
 }
 
 fn triangle_cell(
@@ -367,16 +356,10 @@ fn triangle_cell(
     c11: Vector2,
 ) -> Vector2 {
     if s + t <= 1.0 {
-        return Vector2::new(
-            c00.x() + (c10.x() - c00.x()) * s + (c01.x() - c00.x()) * t,
-            c00.y() + (c10.y() - c00.y()) * s + (c01.y() - c00.y()) * t,
-        );
+        return Vector2::affine2(c00, c10, s, c01, t);
     }
 
     let a = 1.0 - s;
     let b = 1.0 - t;
-    Vector2::new(
-        c11.x() + (c01.x() - c11.x()) * a + (c10.x() - c11.x()) * b,
-        c11.y() + (c01.y() - c11.y()) * a + (c10.y() - c11.y()) * b,
-    )
+    Vector2::affine2(c11, c01, a, c10, b)
 }

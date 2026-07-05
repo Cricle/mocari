@@ -303,6 +303,19 @@ mod core_art_mesh {
     }
 
     #[test]
+    fn vector_interpolation_helpers_cover_lerp_and_affine_offsets() {
+        let origin = Vector2::new(1.0, 2.0);
+        let horizontal = Vector2::new(5.0, 2.0);
+        let vertical = Vector2::new(1.0, 8.0);
+
+        assert_vec_close(origin.lerp(horizontal, 0.25), Vector2::new(2.0, 2.0));
+        assert_vec_close(
+            Vector2::affine2(origin, horizontal, 0.5, vertical, 0.25),
+            Vector2::new(3.0, 3.5),
+        );
+    }
+
+    #[test]
     fn reverse_coordinate_flips_y_only() {
         let mut vertices = [Vector2::new(1.0, 2.0), Vector2::new(-3.0, -4.0)];
 

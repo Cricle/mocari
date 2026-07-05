@@ -1,6 +1,6 @@
 use crate::{Error, Result};
 
-use super::{Endianness, Moc3Header};
+use super::{Moc3Header, parse::read_u32};
 
 const OFFSET_TABLE_START: usize = 0x40;
 const OFFSET_COUNT: usize = 160;
@@ -53,20 +53,6 @@ impl Moc3SectionOffsets {
 
     pub fn section_offset(&self, index: usize) -> Option<u32> {
         self.offsets.get(index).copied()
-    }
-}
-
-fn read_u32(bytes: &[u8], offset: usize, endianness: Endianness) -> u32 {
-    let raw = [
-        bytes[offset],
-        bytes[offset + 1],
-        bytes[offset + 2],
-        bytes[offset + 3],
-    ];
-
-    match endianness {
-        Endianness::Little => u32::from_le_bytes(raw),
-        Endianness::Big => u32::from_be_bytes(raw),
     }
 }
 

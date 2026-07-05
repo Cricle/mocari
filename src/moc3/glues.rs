@@ -6,7 +6,10 @@ use crate::{
 use super::{
     Moc3CountInfo, Moc3DrawableMesh, Moc3DrawableVertex, Moc3Header, Moc3KeyformBindings,
     Moc3SectionOffsets,
-    parse::{invalid_moc3, read_f32_section, read_i32_section, read_u16_section, to_usize},
+    parse::{
+        invalid_moc3, read_f32_section, read_i32_section, read_u16_section, to_usize,
+        validate_count_range,
+    },
 };
 
 const GLUE_BINDING_INDICES_SLOT: usize = 91;
@@ -61,18 +64,20 @@ impl Moc3Glues {
         }
 
         for index in 0..glue_count {
-            validate_range(
+            validate_count_range(
                 info_begin_indices[index],
                 info_counts[index],
                 info_weights.len(),
                 index,
+                "glue",
                 "info",
             )?;
-            validate_range(
+            validate_count_range(
                 keyform_begin_indices[index],
                 keyform_counts[index],
                 keyform_intensities.len(),
                 index,
+                "glue",
                 "keyform",
             )?;
         }
@@ -285,31 +290,4 @@ fn vertex_position(vertex: Moc3DrawableVertex) -> Vector2 {
 
 fn vertex_with_position(vertex: Moc3DrawableVertex, position: Vector2) -> Moc3DrawableVertex {
     Moc3DrawableVertex::new([position.x(), position.y()], vertex.uv())
-}
-
-fn validate_range(
-    begin: i32,
-    count: i32,
-    source_len: usize,
-    index: usize,
-    name: &str,
-) -> Result<()> {
-    if begin < 0 || count < 0 {
-        return Err(invalid_moc3(format!(
-            "glue {index} {name} range is negative"
-        )));
-    }
-    let begin = usize::try_from(begin)
-        .map_err(|_| invalid_moc3(format!("glue {index} {name} begin is too large")))?;
-    let count = usize::try_from(count)
-        .map_err(|_| invalid_moc3(format!("glue {index} {name} count is too large")))?;
-    let end = begin
-        .checked_add(count)
-        .ok_or_else(|| invalid_moc3(format!("glue {index} {name} range overflows")))?;
-    if end > source_len {
-        return Err(invalid_moc3(format!(
-            "glue {index} {name} range is outside section"
-        )));
-    }
-    Ok(())
 }

@@ -5,6 +5,8 @@ use crate::core::{
 const ROTATION_PROBE_ITERATIONS: usize = 10;
 const ROTATION_PROBE_STEP_WARP_PARENT: f32 = -0.1;
 const ROTATION_PROBE_STEP_ROTATION_PARENT: f32 = -10.0;
+const DEFAULT_MULTIPLY_COLOR: [f32; 3] = [1.0, 1.0, 1.0];
+const DEFAULT_SCREEN_COLOR: [f32; 3] = [0.0, 0.0, 0.0];
 
 pub(super) fn parent_rotation_angle(
     composed: &[Option<ComposedDeformer>],
@@ -50,7 +52,7 @@ pub(super) fn parent_rotation_angle(
     }
 
     Some(wrap_angle(
-        direction.y().atan2(direction.x()) - (step).atan2(0.0),
+        direction.y().atan2(direction.x()) - step.atan2(0.0),
     ))
 }
 
@@ -78,6 +80,29 @@ fn wrap_angle(mut angle: f32) -> f32 {
 pub(super) enum ComposedDeformer {
     Warp(ComposedWarp),
     Rotation(ComposedRotation),
+}
+
+impl ComposedDeformer {
+    fn scale_accum(&self) -> f32 {
+        match self {
+            Self::Warp(warp) => warp.scale_accum,
+            Self::Rotation(rotation) => rotation.scale_accum,
+        }
+    }
+
+    fn opacity_accum(&self) -> f32 {
+        match self {
+            Self::Warp(warp) => warp.opacity_accum,
+            Self::Rotation(rotation) => rotation.opacity_accum,
+        }
+    }
+
+    fn colors(&self) -> ([f32; 3], [f32; 3]) {
+        match self {
+            Self::Warp(warp) => (warp.multiply_color, warp.screen_color),
+            Self::Rotation(rotation) => (rotation.multiply_color, rotation.screen_color),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -137,28 +162,24 @@ impl ComposedDeformers {
             Ok(value) => value,
             Err(_) => return 1.0,
         };
-        match self.deformers.get(index) {
-            Some(ComposedDeformer::Warp(warp)) => warp.opacity_accum,
-            Some(ComposedDeformer::Rotation(rotation)) => rotation.opacity_accum,
-            None => 1.0,
-        }
+        self.deformers
+            .get(index)
+            .map(ComposedDeformer::opacity_accum)
+            .unwrap_or(1.0)
     }
 
     pub(super) fn deformer_colors(&self, parent_deformer_index: i32) -> ([f32; 3], [f32; 3]) {
         if parent_deformer_index < 0 {
-            return ([1.0, 1.0, 1.0], [0.0, 0.0, 0.0]);
+            return (DEFAULT_MULTIPLY_COLOR, DEFAULT_SCREEN_COLOR);
         }
         let index = match usize::try_from(parent_deformer_index) {
             Ok(value) => value,
-            Err(_) => return ([1.0, 1.0, 1.0], [0.0, 0.0, 0.0]),
+            Err(_) => return (DEFAULT_MULTIPLY_COLOR, DEFAULT_SCREEN_COLOR),
         };
-        match self.deformers.get(index) {
-            Some(ComposedDeformer::Warp(warp)) => (warp.multiply_color, warp.screen_color),
-            Some(ComposedDeformer::Rotation(rotation)) => {
-                (rotation.multiply_color, rotation.screen_color)
-            }
-            None => ([1.0, 1.0, 1.0], [0.0, 0.0, 0.0]),
-        }
+        self.deformers
+            .get(index)
+            .map(ComposedDeformer::colors)
+            .unwrap_or((DEFAULT_MULTIPLY_COLOR, DEFAULT_SCREEN_COLOR))
     }
 }
 
@@ -196,54 +217,25 @@ pub(super) fn apply_composed_parent(
 }
 
 pub(super) fn parent_scale_accum(composed: &[Option<ComposedDeformer>], parent_index: i32) -> f32 {
-    if parent_index < 0 {
-        return 1.0;
-    }
-    let index = match usize::try_from(parent_index) {
-        Ok(value) => value,
-        Err(_) => return 1.0,
-    };
-    match composed.get(index).and_then(|slot| slot.as_ref()) {
-        Some(ComposedDeformer::Warp(warp)) => warp.scale_accum,
-        Some(ComposedDeformer::Rotation(rotation)) => rotation.scale_accum,
-        None => 1.0,
-    }
+    parent_deformer(composed, parent_index)
+        .map(ComposedDeformer::scale_accum)
+        .unwrap_or(1.0)
 }
 
 pub(super) fn parent_opacity_accum(
     composed: &[Option<ComposedDeformer>],
     parent_index: i32,
 ) -> f32 {
-    if parent_index < 0 {
-        return 1.0;
-    }
-    let index = match usize::try_from(parent_index) {
-        Ok(value) => value,
-        Err(_) => return 1.0,
-    };
-    match composed.get(index).and_then(|slot| slot.as_ref()) {
-        Some(ComposedDeformer::Warp(warp)) => warp.opacity_accum,
-        Some(ComposedDeformer::Rotation(rotation)) => rotation.opacity_accum,
-        None => 1.0,
-    }
+    parent_deformer(composed, parent_index)
+        .map(ComposedDeformer::opacity_accum)
+        .unwrap_or(1.0)
 }
 
 pub(super) fn parent_colors(
     composed: &[Option<ComposedDeformer>],
     parent_index: i32,
 ) -> ([f32; 3], [f32; 3]) {
-    if parent_index < 0 {
-        return ([1.0, 1.0, 1.0], [0.0, 0.0, 0.0]);
-    }
-    let index = match usize::try_from(parent_index) {
-        Ok(value) => value,
-        Err(_) => return ([1.0, 1.0, 1.0], [0.0, 0.0, 0.0]),
-    };
-    match composed.get(index).and_then(|slot| slot.as_ref()) {
-        Some(ComposedDeformer::Warp(warp)) => (warp.multiply_color, warp.screen_color),
-        Some(ComposedDeformer::Rotation(rotation)) => {
-            (rotation.multiply_color, rotation.screen_color)
-        }
-        None => ([1.0, 1.0, 1.0], [0.0, 0.0, 0.0]),
-    }
+    parent_deformer(composed, parent_index)
+        .map(ComposedDeformer::colors)
+        .unwrap_or((DEFAULT_MULTIPLY_COLOR, DEFAULT_SCREEN_COLOR))
 }
