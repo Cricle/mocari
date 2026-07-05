@@ -148,6 +148,10 @@ fn build_moc3_drawable_mesh_for_pose(
         interpolate_art_mesh_color(art_mesh_keyforms, art_mesh_index, &slots, |k| {
             k.screen_color()
         })?;
+    let (parent_multiply_color, parent_screen_color) =
+        composed.deformer_colors(parent_deformer_index);
+    let multiply_color = combine_multiply_color(multiply_color, parent_multiply_color);
+    let screen_color = combine_screen_color(screen_color, parent_screen_color);
     let mut positions = interpolate_art_mesh_positions(art_mesh_keyforms, art_mesh_index, &slots)?;
 
     composed.transform_vertices(parent_deformer_index, &mut positions)?;
@@ -174,6 +178,26 @@ fn build_moc3_drawable_mesh_for_pose(
     mesh.set_multiply_color(multiply_color);
     mesh.set_screen_color(screen_color);
     Some(mesh)
+}
+
+fn combine_multiply_color(local: [f32; 3], parent: [f32; 3]) -> [f32; 3] {
+    [
+        clamp01(local[0] * parent[0]),
+        clamp01(local[1] * parent[1]),
+        clamp01(local[2] * parent[2]),
+    ]
+}
+
+fn combine_screen_color(local: [f32; 3], parent: [f32; 3]) -> [f32; 3] {
+    [
+        clamp01(local[0] + parent[0] - local[0] * parent[0]),
+        clamp01(local[1] + parent[1] - local[1] * parent[1]),
+        clamp01(local[2] + parent[2] - local[2] * parent[2]),
+    ]
+}
+
+fn clamp01(value: f32) -> f32 {
+    value.clamp(0.0, 1.0)
 }
 
 fn interpolate_art_mesh_color(

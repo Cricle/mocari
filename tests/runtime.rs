@@ -220,6 +220,17 @@ fn mao_drawables_carry_non_identity_multiply_and_screen_colors() {
 }
 
 #[test]
+fn mao_drawable_colors_match_core_default_pose() {
+    let model = load_model_runtime("assets/models/Mao/Mao.model3.json").unwrap();
+    let meshes = model.runtime().meshes();
+
+    assert_color_close(meshes[45].multiply_color(), [1.0, 1.0, 1.0]);
+    assert_color_close(meshes[45].screen_color(), [0.0, 0.0, 0.0]);
+    assert_color_close(meshes[138].multiply_color(), [1.0, 1.0, 1.0]);
+    assert_color_close(meshes[138].screen_color(), [1.0, 0.454_901_96, 0.513_725_5]);
+}
+
+#[test]
 fn legacy_model_without_color_keyforms_defaults_to_identity() {
     let model = load_model_runtime("assets/models/Haru/Haru.model3.json").unwrap();
     for mesh in model.runtime().meshes() {
@@ -262,4 +273,10 @@ fn default_pose_hides_redundant_arm_via_pose_groups() {
         "pose group should hide the redundant arm at rest"
     );
     assert!(visible > 0, "the selected arm and body must stay visible");
+}
+
+fn assert_color_close(actual: [f32; 3], expected: [f32; 3]) {
+    for (actual, expected) in actual.into_iter().zip(expected) {
+        assert!((actual - expected).abs() < 0.0001);
+    }
 }

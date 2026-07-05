@@ -29,6 +29,8 @@ pub struct Moc3CountInfo {
     glue: u32,
     glue_info: u32,
     glue_keyforms: u32,
+    keyform_multiply_colors: u32,
+    keyform_screen_colors: u32,
 }
 
 impl Moc3CountInfo {
@@ -37,7 +39,8 @@ impl Moc3CountInfo {
         let offsets = Moc3SectionOffsets::parse(bytes)?;
         let offset = usize::try_from(offsets.count_info_offset())
             .map_err(|_| invalid_counts("count info offset does not fit in platform usize"))?;
-        let required_len = header.version().count_info_word_count() * U32_SIZE;
+        let word_count = header.version().count_info_word_count();
+        let required_len = word_count * U32_SIZE;
 
         if bytes.len().saturating_sub(offset) < required_len {
             return Err(invalid_counts("count info table is incomplete"));
@@ -69,6 +72,8 @@ impl Moc3CountInfo {
             glue: read(20),
             glue_info: read(21),
             glue_keyforms: read(22),
+            keyform_multiply_colors: if word_count > 23 { read(23) } else { 0 },
+            keyform_screen_colors: if word_count > 24 { read(24) } else { 0 },
         })
     }
 
@@ -162,6 +167,14 @@ impl Moc3CountInfo {
 
     pub fn glue_keyforms(&self) -> u32 {
         self.glue_keyforms
+    }
+
+    pub fn keyform_multiply_colors(&self) -> u32 {
+        self.keyform_multiply_colors
+    }
+
+    pub fn keyform_screen_colors(&self) -> u32 {
+        self.keyform_screen_colors
     }
 }
 

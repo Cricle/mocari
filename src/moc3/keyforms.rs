@@ -3,7 +3,8 @@ use crate::Result;
 use super::{
     Moc3CountInfo, Moc3Header, Moc3SectionOffsets,
     parse::{
-        invalid_moc3, read_f32_section, read_f32_section_or_default, read_i32_section, to_usize,
+        invalid_moc3, read_f32_section, read_f32_section_or_default, read_i32_section,
+        read_i32_section_or_default, to_usize,
     },
 };
 
@@ -14,6 +15,7 @@ const ART_MESH_KEYFORM_OPACITIES_SLOT: usize = 68;
 const ART_MESH_KEYFORM_DRAW_ORDERS_SLOT: usize = 69;
 const KEYFORM_POSITION_BEGIN_INDICES_SLOT: usize = 70;
 const KEYFORM_POSITION_XYS_SLOT: usize = 71;
+const ART_MESH_KEYFORM_COLOR_BEGIN_INDICES_SLOT: usize = 107;
 const KEYFORM_MULTIPLY_COLOR_SLOTS: [usize; 3] = [108, 109, 110];
 const KEYFORM_SCREEN_COLOR_SLOTS: [usize; 3] = [111, 112, 113];
 
@@ -176,56 +178,93 @@ impl Moc3ArtMeshKeyforms {
             to_usize(counts.keyform_positions(), "keyform position count")?,
             header.endianness(),
         )?;
-        let read_color_channels = |slots: [usize; 3], default: f32| -> Result<[Vec<f32>; 3]> {
-            Ok([
-                read_f32_section_or_default(
-                    bytes,
-                    &offsets,
-                    slots[0],
-                    art_mesh_keyform_count,
-                    header.endianness(),
-                    default,
-                )?,
-                read_f32_section_or_default(
-                    bytes,
-                    &offsets,
-                    slots[1],
-                    art_mesh_keyform_count,
-                    header.endianness(),
-                    default,
-                )?,
-                read_f32_section_or_default(
-                    bytes,
-                    &offsets,
-                    slots[2],
-                    art_mesh_keyform_count,
-                    header.endianness(),
-                    default,
-                )?,
-            ])
-        };
-        let multiply_colors = read_color_channels(KEYFORM_MULTIPLY_COLOR_SLOTS, 1.0)?;
-        let screen_colors = read_color_channels(KEYFORM_SCREEN_COLOR_SLOTS, 0.0)?;
+        let art_mesh_keyform_color_begin_indices = read_i32_section_or_default(
+            bytes,
+            &offsets,
+            ART_MESH_KEYFORM_COLOR_BEGIN_INDICES_SLOT,
+            art_mesh_count,
+            header.endianness(),
+            -1,
+        )?;
+        let read_color_channels =
+            |slots: [usize; 3], count: usize, default: f32| -> Result<[Vec<f32>; 3]> {
+                Ok([
+                    read_f32_section_or_default(
+                        bytes,
+                        &offsets,
+                        slots[0],
+                        count,
+                        header.endianness(),
+                        default,
+                    )?,
+                    read_f32_section_or_default(
+                        bytes,
+                        &offsets,
+                        slots[1],
+                        count,
+                        header.endianness(),
+                        default,
+                    )?,
+                    read_f32_section_or_default(
+                        bytes,
+                        &offsets,
+                        slots[2],
+                        count,
+                        header.endianness(),
+                        default,
+                    )?,
+                ])
+            };
+        let multiply_colors = read_color_channels(
+            KEYFORM_MULTIPLY_COLOR_SLOTS,
+            to_usize(
+                counts.keyform_multiply_colors(),
+                "keyform multiply color count",
+            )?,
+            1.0,
+        )?;
+        let screen_colors = read_color_channels(
+            KEYFORM_SCREEN_COLOR_SLOTS,
+            to_usize(counts.keyform_screen_colors(), "keyform screen color count")?,
+            0.0,
+        )?;
 
-        let keyforms = (0..art_mesh_keyform_count)
+        let mut keyforms = (0..art_mesh_keyform_count)
             .map(|i| {
                 Moc3ArtMeshKeyformInfo::with_colors(
                     opacities[i],
                     draw_orders[i],
                     position_begin_indices[i],
-                    [
-                        multiply_colors[0][i],
-                        multiply_colors[1][i],
-                        multiply_colors[2][i],
-                    ],
-                    [
-                        screen_colors[0][i],
-                        screen_colors[1][i],
-                        screen_colors[2][i],
-                    ],
+                    [1.0, 1.0, 1.0],
+                    [0.0, 0.0, 0.0],
                 )
             })
             .collect::<Vec<_>>();
+        for mesh_index in 0..art_mesh_count {
+            let keyform_begin = usize::try_from(keyform_begin_indices[mesh_index])
+                .map_err(|_| invalid_moc3("art mesh keyform begin index is negative"))?;
+            let keyform_count = usize::try_from(keyform_counts[mesh_index])
+                .map_err(|_| invalid_moc3("art mesh keyform count is negative"))?;
+            let color_begin = art_mesh_keyform_color_begin_indices[mesh_index];
+            if color_begin < 0 {
+                continue;
+            }
+            let color_begin = usize::try_from(color_begin)
+                .map_err(|_| invalid_moc3("art mesh color begin index is too large"))?;
+            for local_index in 0..keyform_count {
+                let keyform_index = keyform_begin
+                    .checked_add(local_index)
+                    .ok_or_else(|| invalid_moc3("art mesh keyform index overflows"))?;
+                let color_index = color_begin
+                    .checked_add(local_index)
+                    .ok_or_else(|| invalid_moc3("art mesh color index overflows"))?;
+                let keyform = keyforms.get_mut(keyform_index).ok_or_else(|| {
+                    invalid_moc3("art mesh keyform color index is outside keyforms")
+                })?;
+                keyform.multiply_color = color_at(&multiply_colors, color_index, [1.0, 1.0, 1.0]);
+                keyform.screen_color = color_at(&screen_colors, color_index, [0.0, 0.0, 0.0]);
+            }
+        }
 
         Self::from_parts(
             keyform_begin_indices,
@@ -263,6 +302,14 @@ impl Moc3ArtMeshKeyforms {
         let len = usize::try_from(vertex_count).ok()?.checked_mul(2)?;
         self.position_xys.get(start..start.checked_add(len)?)
     }
+}
+
+fn color_at(channels: &[Vec<f32>; 3], index: usize, default: [f32; 3]) -> [f32; 3] {
+    [
+        channels[0].get(index).copied().unwrap_or(default[0]),
+        channels[1].get(index).copied().unwrap_or(default[1]),
+        channels[2].get(index).copied().unwrap_or(default[2]),
+    ]
 }
 
 fn validate_keyform_ranges(
