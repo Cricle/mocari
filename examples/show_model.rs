@@ -1,4 +1,10 @@
-use std::{error::Error, fmt, path::PathBuf, sync::Arc, time::Instant};
+use std::{
+    error::Error,
+    fmt,
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use ab_glyph::{Font, FontArc, Glyph, ScaleFont, point};
 use mocari::{
@@ -44,6 +50,7 @@ const SLIDER_TRACK_RGBA: &[u8] = &[78, 90, 98, 235];
 const SLIDER_FILL_RGBA: &[u8] = &[76, 149, 208, 245];
 const TEXT_HEIGHT_PX: f32 = 22.0;
 const TEXT_RGBA: [u8; 4] = [232, 238, 242, 255];
+const FPS_WARMUP_DURATION: Duration = Duration::from_millis(1200);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum ButtonAction {
@@ -138,7 +145,7 @@ const MODEL_SPECS: &[ModelSpec] = &[
 
 fn main() -> Result<(), Box<dyn Error>> {
     let event_loop = EventLoop::new()?;
-    event_loop.set_control_flow(ControlFlow::Poll);
+    event_loop.set_control_flow(ControlFlow::Wait);
 
     let mut app = ShowModelApp::default();
     event_loop.run_app(&mut app)?;
@@ -169,7 +176,10 @@ impl ApplicationHandler for ShowModelApp {
         };
 
         match pollster::block_on(WindowState::new(window)) {
-            Ok(state) => self.state = Some(state),
+            Ok(state) => {
+                state.window.request_redraw();
+                self.state = Some(state);
+            }
             Err(error) => {
                 eprintln!("failed to initialize renderer: {error}");
                 event_loop.exit();
@@ -243,7 +253,9 @@ impl ApplicationHandler for ShowModelApp {
     }
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
-        if let Some(state) = self.state.as_ref() {
+        if let Some(state) = self.state.as_ref()
+            && state.needs_continuous_redraw()
+        {
             state.window.request_redraw();
         }
     }
@@ -274,6 +286,7 @@ struct WindowState {
     dragging_parameter_slider: bool,
     cursor_position: Option<PhysicalPosition<f64>>,
     last_frame: Instant,
+    redraw_until: Instant,
     rng: u64,
 }
 
@@ -335,6 +348,11 @@ impl FpsMeter {
         let previous = self.last_presented_at.replace(now)?;
         let delta = now.duration_since(previous).as_secs_f32();
         if delta <= 0.0 {
+            return None;
+        }
+        if delta > 0.25 {
+            self.sample_frames = 0;
+            self.sample_elapsed = 0.0;
             return None;
         }
 
@@ -426,6 +444,7 @@ impl WindowState {
             create_fps_label_quad(&renderer, &device, &queue, &font, fps_meter.label(), size)?;
         window.set_title(&window_title(MODEL_SPECS[model_index]));
 
+        let now = Instant::now();
         Ok(Self {
             window,
             surface,
@@ -450,7 +469,8 @@ impl WindowState {
             selected_parameter_index,
             dragging_parameter_slider: false,
             cursor_position: None,
-            last_frame: Instant::now(),
+            last_frame: now,
+            redraw_until: now + FPS_WARMUP_DURATION,
             rng: 0x9e37_79b9_7f4a_7c15,
         })
     }
@@ -471,6 +491,7 @@ impl WindowState {
         self.button_uis =
             create_button_uis(&self.renderer, &self.device, &self.queue, &self.font, size)?;
         self.slider_track_buffers = create_slider_track_buffers(&self.device, size)?;
+        self.redraw_until = Instant::now() + FPS_WARMUP_DURATION;
         self.fps_label = create_fps_label_quad(
             &self.renderer,
             &self.device,
@@ -618,6 +639,12 @@ impl WindowState {
         self.rng
     }
 
+    fn needs_continuous_redraw(&self) -> bool {
+        self.model.player.is_some()
+            || self.model.expression_manager.active_expression_count() > 0
+            || Instant::now() < self.redraw_until
+    }
+
     fn advance_motion(&mut self) -> Result<(), Box<dyn Error>> {
         let now = Instant::now();
         let delta = now.duration_since(self.last_frame).as_secs_f32();
@@ -657,7 +684,9 @@ impl WindowState {
             self.fps_meter.label(),
             self.window.inner_size(),
         )?;
-        self.last_frame = Instant::now();
+        let now = Instant::now();
+        self.last_frame = now;
+        self.redraw_until = now + FPS_WARMUP_DURATION;
         self.selected_parameter_index = initial_parameter_selection(&self.model.runtime);
         self.refresh_parameter_controls()?;
         self.window.set_title(&window_title(spec));
@@ -803,6 +832,7 @@ impl WindowState {
                 &label,
                 self.window.inner_size(),
             )?;
+            self.window.request_redraw();
         }
         Ok(())
     }
