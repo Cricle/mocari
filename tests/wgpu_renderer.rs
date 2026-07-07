@@ -748,9 +748,56 @@ fn mesh_buffers_update_drawables_reports_visibility_changes() {
         .update_drawables(&queue, std::slice::from_ref(&updated))
         .unwrap();
 
-    assert_eq!(update.uploaded_drawables(), 1);
+    assert_eq!(update.uploaded_drawables(), 0);
     assert!(!update.bounds_changed());
     assert!(update.visibility_changed());
+}
+
+#[test]
+fn mesh_buffers_update_drawables_skips_hidden_vertex_uploads() {
+    let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let original = test_mesh_with_opacity(0, 20.0, 0.0);
+    let hidden_update = Moc3DrawableMesh::from_parts_with_render_order(
+        original.texture_index(),
+        original.drawable_flags(),
+        0.0,
+        original.draw_order(),
+        original.render_order(),
+        vec![
+            Moc3DrawableVertex::new([-0.75, -0.75], [0.0, 1.0]),
+            Moc3DrawableVertex::new([0.75, -0.75], [1.0, 1.0]),
+            Moc3DrawableVertex::new([0.0, 0.75], [0.5, 0.0]),
+        ],
+        original.indices().to_vec(),
+        original.masks().to_vec(),
+    );
+    let visible_update = Moc3DrawableMesh::from_parts_with_render_order(
+        hidden_update.texture_index(),
+        hidden_update.drawable_flags(),
+        1.0,
+        hidden_update.draw_order(),
+        hidden_update.render_order(),
+        hidden_update.vertices().to_vec(),
+        hidden_update.indices().to_vec(),
+        hidden_update.masks().to_vec(),
+    );
+    let mut buffers = WgpuMeshBuffers::from_drawables(&device, &[original]).expect("mesh buffers");
+
+    let hidden = buffers
+        .update_drawables(&queue, std::slice::from_ref(&hidden_update))
+        .unwrap();
+
+    assert_eq!(hidden.uploaded_drawables(), 0);
+    assert!(!hidden.bounds_changed());
+    assert!(!hidden.visibility_changed());
+
+    let visible = buffers
+        .update_drawables(&queue, std::slice::from_ref(&visible_update))
+        .unwrap();
+
+    assert_eq!(visible.uploaded_drawables(), 1);
+    assert!(!visible.bounds_changed());
+    assert!(visible.visibility_changed());
 }
 
 #[test]
@@ -1450,7 +1497,7 @@ fn draw_with_clipping_skips_transparent_drawables() {
 }
 
 #[test]
-fn draw_masks_skips_transparent_mask_drawables() {
+fn draw_masks_keeps_transparent_mask_drawables() {
     let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
     let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
     let texture = renderer
@@ -1495,7 +1542,7 @@ fn draw_masks_skips_transparent_mask_drawables() {
         let drawn = renderer
             .draw_masks_with_textures(&mut pass, &buffers, &clipping_resources, &[texture])
             .unwrap();
-        assert_eq!(drawn, 0);
+        assert_eq!(drawn, 1);
     }
 
     let _ = encoder.finish();
