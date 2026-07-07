@@ -39,6 +39,10 @@ impl DrawableInfo {
         self.opacity
     }
 
+    pub fn is_visible(&self) -> bool {
+        self.opacity > 0.0 && self.bounds.is_some()
+    }
+
     pub fn draw_order(&self) -> f32 {
         self.draw_order
     }
@@ -349,6 +353,10 @@ impl ClippingPlan {
         let mut unmasked_drawable_indices = Vec::new();
 
         for (drawable_index, drawable) in drawables.iter().enumerate() {
+            if !drawable.is_visible() {
+                continue;
+            }
+
             if drawable.masks().is_empty() {
                 unmasked_drawable_indices.push(drawable_index);
                 continue;

@@ -1,10 +1,4 @@
-use std::{
-    error::Error,
-    fmt,
-    path::PathBuf,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{error::Error, fmt, path::PathBuf, sync::Arc, time::Instant};
 
 use ab_glyph::{Font, FontArc, Glyph, ScaleFont, point};
 use mocari::{
@@ -50,7 +44,6 @@ const SLIDER_TRACK_RGBA: &[u8] = &[78, 90, 98, 235];
 const SLIDER_FILL_RGBA: &[u8] = &[76, 149, 208, 245];
 const TEXT_HEIGHT_PX: f32 = 22.0;
 const TEXT_RGBA: [u8; 4] = [232, 238, 242, 255];
-const FPS_WARMUP_DURATION: Duration = Duration::from_millis(1200);
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum ButtonAction {
@@ -286,7 +279,6 @@ struct WindowState {
     dragging_parameter_slider: bool,
     cursor_position: Option<PhysicalPosition<f64>>,
     last_frame: Instant,
-    redraw_until: Instant,
     rng: u64,
 }
 
@@ -470,7 +462,6 @@ impl WindowState {
             dragging_parameter_slider: false,
             cursor_position: None,
             last_frame: now,
-            redraw_until: now + FPS_WARMUP_DURATION,
             rng: 0x9e37_79b9_7f4a_7c15,
         })
     }
@@ -491,7 +482,6 @@ impl WindowState {
         self.button_uis =
             create_button_uis(&self.renderer, &self.device, &self.queue, &self.font, size)?;
         self.slider_track_buffers = create_slider_track_buffers(&self.device, size)?;
-        self.redraw_until = Instant::now() + FPS_WARMUP_DURATION;
         self.fps_label = create_fps_label_quad(
             &self.renderer,
             &self.device,
@@ -547,6 +537,7 @@ impl WindowState {
         let motion = load_motion(&self.model.motions[pick])?;
         self.model.player = Some(MotionPlayer::new(motion));
         self.model.dirty = true;
+        self.reset_fps_label()?;
         self.last_frame = Instant::now();
         self.window.request_redraw();
         Ok(())
@@ -560,6 +551,7 @@ impl WindowState {
         let expression = load_expression(&self.model.expressions[pick])?;
         self.model.expression_manager.play(expression);
         self.model.dirty = true;
+        self.reset_fps_label()?;
         self.last_frame = Instant::now();
         self.window.request_redraw();
         Ok(())
@@ -640,9 +632,20 @@ impl WindowState {
     }
 
     fn needs_continuous_redraw(&self) -> bool {
-        self.model.player.is_some()
-            || self.model.expression_manager.active_expression_count() > 0
-            || Instant::now() < self.redraw_until
+        self.model.player.is_some() || self.model.expression_manager.active_expression_count() > 0
+    }
+
+    fn reset_fps_label(&mut self) -> Result<(), Box<dyn Error>> {
+        self.fps_meter.reset();
+        self.fps_label = create_fps_label_quad(
+            &self.renderer,
+            &self.device,
+            &self.queue,
+            &self.font,
+            self.fps_meter.label(),
+            self.window.inner_size(),
+        )?;
+        Ok(())
     }
 
     fn advance_motion(&mut self) -> Result<(), Box<dyn Error>> {
@@ -686,7 +689,6 @@ impl WindowState {
         )?;
         let now = Instant::now();
         self.last_frame = now;
-        self.redraw_until = now + FPS_WARMUP_DURATION;
         self.selected_parameter_index = initial_parameter_selection(&self.model.runtime);
         self.refresh_parameter_controls()?;
         self.window.set_title(&window_title(spec));
@@ -981,7 +983,7 @@ fn update_model_gpu(
         Err(_) => return rebuild_model_gpu(renderer, device, model),
     };
 
-    if update.bounds_changed() {
+    if update.bounds_changed() || update.visibility_changed() {
         update_model_clipping(renderer, device, queue, model)?;
     }
     Ok(())

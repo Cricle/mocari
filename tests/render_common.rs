@@ -97,6 +97,22 @@ fn splits_clipping_contexts_when_inverted_flag_differs() {
 }
 
 #[test]
+fn clipping_plan_ignores_transparent_drawables() {
+    let meshes = [
+        test_mesh_with_opacity(0, 0.0, 0.0, vec![]),
+        test_mesh_with_opacity(0, 1.0, 0.0, vec![5]),
+        test_mesh_with_opacity(0, 2.0, 1.0, vec![5]),
+    ];
+
+    let plan = ClippingPlan::from_drawables(&infos(&meshes));
+
+    assert!(plan.unmasked_drawable_indices().is_empty());
+    assert_eq!(plan.contexts().len(), 1);
+    assert_eq!(plan.contexts()[0].masks(), &[5]);
+    assert_eq!(plan.contexts()[0].drawable_indices(), &[2]);
+}
+
+#[test]
 fn assigns_single_texture_clipping_layouts_by_channel_and_cell() {
     let meshes = [
         test_mesh_with_masks(0, 0.0, vec![10]),
@@ -200,6 +216,27 @@ fn test_mesh_with_draw_order(texture_index: u8, draw_order: f32) -> Moc3Drawable
 
 fn test_mesh_with_masks(texture_index: u8, draw_order: f32, masks: Vec<i32>) -> Moc3DrawableMesh {
     test_mesh(texture_index, 0, draw_order, masks)
+}
+
+fn test_mesh_with_opacity(
+    texture_index: u8,
+    draw_order: f32,
+    opacity: f32,
+    masks: Vec<i32>,
+) -> Moc3DrawableMesh {
+    Moc3DrawableMesh::from_parts(
+        i32::from(texture_index),
+        0,
+        opacity,
+        draw_order,
+        vec![
+            Moc3DrawableVertex::new([-0.5, -0.5], [0.0, 1.0]),
+            Moc3DrawableVertex::new([0.5, -0.5], [1.0, 1.0]),
+            Moc3DrawableVertex::new([0.0, 0.5], [0.5, 0.0]),
+        ],
+        vec![0, 1, 2],
+        masks,
+    )
 }
 
 fn test_mesh_with_render_order(

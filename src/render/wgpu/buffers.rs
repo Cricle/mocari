@@ -72,6 +72,10 @@ impl WgpuDrawableBuffers {
         self.vertex_count == 0 || self.index_count == 0
     }
 
+    pub fn is_visible(&self) -> bool {
+        !self.is_empty() && self.info.is_visible()
+    }
+
     pub fn info(&self) -> &DrawableInfo {
         &self.info
     }
@@ -119,6 +123,7 @@ pub struct WgpuMeshBuffers {
 pub struct WgpuMeshUpdate {
     uploaded_drawables: usize,
     bounds_changed: bool,
+    visibility_changed: bool,
 }
 
 impl WgpuMeshUpdate {
@@ -128,6 +133,10 @@ impl WgpuMeshUpdate {
 
     pub fn bounds_changed(&self) -> bool {
         self.bounds_changed
+    }
+
+    pub fn visibility_changed(&self) -> bool {
+        self.visibility_changed
     }
 }
 
@@ -280,6 +289,7 @@ impl WgpuMeshBuffers {
         let mut vertex_bytes = Vec::new();
         let mut uploads = 0;
         let mut bounds_changed = false;
+        let mut visibility_changed = false;
         for (drawable, mesh) in self.drawables.iter_mut().zip(meshes) {
             encode_vertices_from_drawable(mesh, &mut vertex_bytes);
             if !vertex_bytes.is_empty() && vertex_bytes != drawable.vertex_bytes {
@@ -288,8 +298,10 @@ impl WgpuMeshBuffers {
                 drawable.vertex_bytes.extend_from_slice(&vertex_bytes);
                 uploads += 1;
             }
+            let was_visible = drawable.is_visible();
             let info = DrawableInfo::from_mesh(mesh);
             bounds_changed |= drawable.info.bounds() != info.bounds();
+            visibility_changed |= was_visible != (!drawable.is_empty() && info.is_visible());
             drawable.info = info;
         }
         self.draw_order_indices = draw_order_indices_from(
@@ -301,6 +313,7 @@ impl WgpuMeshBuffers {
         Ok(WgpuMeshUpdate {
             uploaded_drawables: uploads,
             bounds_changed,
+            visibility_changed,
         })
     }
 }

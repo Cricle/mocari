@@ -187,7 +187,7 @@ impl WgpuLive2dRenderer {
                 .drawables()
                 .get(drawable_index)
                 .ok_or(WgpuRenderError::MissingDrawable { drawable_index })?;
-            if drawable.is_empty() {
+            if !drawable.is_visible() {
                 continue;
             }
             if !drawable.masks().is_empty() {
@@ -225,7 +225,7 @@ impl WgpuLive2dRenderer {
                     .drawables()
                     .get(drawable_index)
                     .ok_or(WgpuRenderError::MissingDrawable { drawable_index })?;
-                if drawable.is_empty() {
+                if !drawable.is_visible() {
                     continue;
                 }
                 let texture_bind_group = bind_group_for_texture(drawable.texture_index())?;
@@ -260,7 +260,7 @@ impl WgpuLive2dRenderer {
                 .drawables()
                 .get(drawable_index)
                 .ok_or(WgpuRenderError::MissingDrawable { drawable_index })?;
-            if drawable.is_empty() {
+            if !drawable.is_visible() {
                 continue;
             }
             let texture_bind_group = bind_group_for_texture(drawable.texture_index())?;

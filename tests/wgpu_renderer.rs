@@ -700,6 +700,7 @@ fn mesh_buffers_update_drawables_skips_unchanged_vertex_uploads() {
 
     assert_eq!(update.uploaded_drawables(), 0);
     assert!(!update.bounds_changed());
+    assert!(!update.visibility_changed());
 }
 
 #[test]
@@ -724,6 +725,32 @@ fn mesh_buffers_update_drawables_reports_unchanged_bounds_for_opacity_updates() 
 
     assert_eq!(update.uploaded_drawables(), 1);
     assert!(!update.bounds_changed());
+    assert!(!update.visibility_changed());
+}
+
+#[test]
+fn mesh_buffers_update_drawables_reports_visibility_changes() {
+    let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let original = test_mesh_with_opacity(0, 20.0, 1.0);
+    let updated = Moc3DrawableMesh::from_parts_with_render_order(
+        original.texture_index(),
+        original.drawable_flags(),
+        0.0,
+        original.draw_order(),
+        original.render_order(),
+        original.vertices().to_vec(),
+        original.indices().to_vec(),
+        original.masks().to_vec(),
+    );
+    let mut buffers = WgpuMeshBuffers::from_drawables(&device, &[original]).expect("mesh buffers");
+
+    let update = buffers
+        .update_drawables(&queue, std::slice::from_ref(&updated))
+        .unwrap();
+
+    assert_eq!(update.uploaded_drawables(), 1);
+    assert!(!update.bounds_changed());
+    assert!(update.visibility_changed());
 }
 
 #[test]
@@ -1217,6 +1244,65 @@ fn draws_with_uploaded_textures_and_transform() {
 }
 
 #[test]
+fn draw_with_textures_skips_transparent_drawables() {
+    let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let texture = renderer
+        .create_rgba8_texture(&device, &queue, 1, 1, &[255, 255, 255, 255])
+        .unwrap();
+    let meshes = [
+        test_mesh_with_opacity(0, 0.0, 0.0),
+        test_mesh_with_opacity(0, 1.0, 1.0),
+    ];
+    let buffers = WgpuMeshBuffers::from_drawables(&device, &meshes).unwrap();
+
+    let target = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("live2d.test.transparent_drawable_target"),
+        size: wgpu::Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("live2d.test.transparent_drawable_encoder"),
+    });
+
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("live2d.test.transparent_drawable_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+
+        let drawn = renderer
+            .draw_with_textures(&mut pass, &buffers, &[texture])
+            .unwrap();
+        assert_eq!(drawn, 1);
+    }
+
+    let _ = encoder.finish();
+}
+
+#[test]
 fn draw_with_clipping_skips_empty_drawables() {
     let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
     let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
@@ -1281,6 +1367,133 @@ fn draw_with_clipping_skips_empty_drawables() {
                 &mask_target,
                 &transform,
             )
+            .unwrap();
+        assert_eq!(drawn, 0);
+    }
+
+    let _ = encoder.finish();
+}
+
+#[test]
+fn draw_with_clipping_skips_transparent_drawables() {
+    let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let texture = renderer
+        .create_rgba8_texture(&device, &queue, 1, 1, &[255, 255, 255, 255])
+        .unwrap();
+    let meshes = [
+        test_mesh_with_opacity(0, 0.0, 0.0),
+        test_mesh_with_opacity(0, 1.0, 1.0),
+    ];
+    let buffers = WgpuMeshBuffers::from_drawables(&device, &meshes).unwrap();
+    let mut clipping_plan = WgpuClippingPlan::from_mesh_buffers(&buffers);
+    clipping_plan
+        .prepare_single_texture_masks(&buffers)
+        .unwrap();
+    let clipping_resources = renderer
+        .create_clipping_resources(&device, &clipping_plan)
+        .unwrap();
+    let mask_target = renderer.create_mask_render_target(&device, 16).unwrap();
+    let transform = renderer.create_transform(&device, &Matrix44::identity());
+
+    let target = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("live2d.test.transparent_clipped_drawable_target"),
+        size: wgpu::Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("live2d.test.transparent_clipped_drawable_encoder"),
+    });
+
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("live2d.test.transparent_clipped_drawable_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+
+        let drawn = renderer
+            .draw_with_textures_clipping_and_transform(
+                &mut pass,
+                &buffers,
+                &[texture],
+                &clipping_resources,
+                &mask_target,
+                &transform,
+            )
+            .unwrap();
+        assert_eq!(drawn, 1);
+    }
+
+    let _ = encoder.finish();
+}
+
+#[test]
+fn draw_masks_skips_transparent_mask_drawables() {
+    let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let texture = renderer
+        .create_rgba8_texture(&device, &queue, 1, 1, &[255, 255, 255, 255])
+        .unwrap();
+    let meshes = [
+        test_mesh_with_masks(0, 0.0, vec![1]),
+        test_mesh_with_opacity(0, 1.0, 0.0),
+    ];
+    let buffers = WgpuMeshBuffers::from_drawables(&device, &meshes).unwrap();
+    let mut clipping_plan = WgpuClippingPlan::from_mesh_buffers(&buffers);
+    clipping_plan
+        .prepare_single_texture_masks(&buffers)
+        .unwrap();
+    let clipping_resources = renderer
+        .create_clipping_resources(&device, &clipping_plan)
+        .unwrap();
+
+    let mask_target = renderer.create_mask_render_target(&device, 16).unwrap();
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("live2d.test.transparent_mask_drawable_encoder"),
+    });
+
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("live2d.test.transparent_mask_drawable_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: mask_target.view(),
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+
+        let drawn = renderer
+            .draw_masks_with_textures(&mut pass, &buffers, &clipping_resources, &[texture])
             .unwrap();
         assert_eq!(drawn, 0);
     }
@@ -1389,6 +1602,22 @@ fn test_mesh_with_flags(
 
 fn test_mesh_with_masks(texture_index: u8, draw_order: f32, masks: Vec<i32>) -> Moc3DrawableMesh {
     test_mesh(texture_index, 0, draw_order, masks)
+}
+
+fn test_mesh_with_opacity(texture_index: u8, draw_order: f32, opacity: f32) -> Moc3DrawableMesh {
+    Moc3DrawableMesh::from_parts(
+        i32::from(texture_index),
+        0,
+        opacity,
+        draw_order,
+        vec![
+            Moc3DrawableVertex::new([-0.5, -0.5], [0.0, 1.0]),
+            Moc3DrawableVertex::new([0.5, -0.5], [1.0, 1.0]),
+            Moc3DrawableVertex::new([0.0, 0.5], [0.5, 0.0]),
+        ],
+        vec![0, 1, 2],
+        Vec::new(),
+    )
 }
 
 fn test_mesh_with_render_order(
