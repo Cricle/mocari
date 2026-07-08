@@ -5,7 +5,10 @@
 //! when the application needs per-frame parameter, motion, or expression updates.
 //! Use [`crate::assets::load_model`] for a static default-pose snapshot.
 
-use std::{fmt, fs, path::Path};
+use std::{
+    fmt, fs,
+    path::{Path, PathBuf},
+};
 
 use crate::{
     json::{Model3, Pose3},
@@ -143,31 +146,7 @@ impl std::error::Error for AssetLoadError {}
 /// `.moc3` file and textures from the same model directory, then builds drawable
 /// meshes using the model's default parameter values.
 pub fn load_model(path: impl AsRef<Path>) -> Result<DefaultModel, AssetLoadError> {
-    let parsed = parse_model(path)?;
-    let mut meshes = build_moc3_drawable_meshes_for_default_pose_with_offscreen_state(
-        &parsed.art_meshes,
-        &parsed.art_mesh_keyforms,
-        &parsed.deformers,
-        &parsed.bindings,
-        &parsed.ids,
-        &parsed.offscreen,
-    )
-    .ok_or(AssetLoadError::DrawableMeshes)?;
-    parsed
-        .glues
-        .apply(
-            &mut meshes,
-            &parsed.bindings,
-            parsed.bindings.parameter_default_values(),
-        )
-        .ok_or(AssetLoadError::DrawableMeshes)?;
-
-    Ok(DefaultModel {
-        model: parsed.model,
-        canvas: parsed.canvas,
-        meshes,
-        textures: parsed.textures,
-    })
+    parse_model(path)?.into_default_model()
 }
 
 /// Loads a model into a mutable runtime.
@@ -179,28 +158,7 @@ pub fn load_model(path: impl AsRef<Path>) -> Result<DefaultModel, AssetLoadError
 pub fn load_model_runtime(path: impl AsRef<Path>) -> Result<RuntimeModel, AssetLoadError> {
     let path = path.as_ref();
     let model_dir = path.parent().map(Path::to_path_buf);
-    let parsed = parse_model(path)?;
-    let runtime = ModelRuntime::new(
-        parsed.model,
-        parsed.canvas,
-        parsed.art_meshes,
-        parsed.art_mesh_keyforms,
-        parsed.deformers,
-        parsed.bindings,
-        parsed.ids,
-        parsed.offscreen,
-        parsed.glues,
-        parsed.parts,
-        parsed.draw_order_groups,
-        parsed.pose,
-    )
-    .ok_or(AssetLoadError::DrawableMeshes)?;
-
-    Ok(RuntimeModel {
-        runtime,
-        textures: parsed.textures,
-        model_dir,
-    })
+    parse_model(path)?.into_runtime_model(model_dir)
 }
 
 #[derive(Debug, Clone)]
@@ -208,7 +166,7 @@ pub fn load_model_runtime(path: impl AsRef<Path>) -> Result<RuntimeModel, AssetL
 pub struct RuntimeModel {
     runtime: ModelRuntime,
     textures: Vec<DecodedTexture>,
-    model_dir: Option<std::path::PathBuf>,
+    model_dir: Option<PathBuf>,
 }
 
 impl RuntimeModel {
@@ -250,6 +208,61 @@ struct ParsedModel {
     draw_order_groups: Option<Moc3DrawOrderGroups>,
     pose: Option<Pose3>,
     textures: Vec<DecodedTexture>,
+}
+
+impl ParsedModel {
+    fn into_default_model(self) -> Result<DefaultModel, AssetLoadError> {
+        let mut meshes = build_moc3_drawable_meshes_for_default_pose_with_offscreen_state(
+            &self.art_meshes,
+            &self.art_mesh_keyforms,
+            &self.deformers,
+            &self.bindings,
+            &self.ids,
+            &self.offscreen,
+        )
+        .ok_or(AssetLoadError::DrawableMeshes)?;
+        self.glues
+            .apply(
+                &mut meshes,
+                &self.bindings,
+                self.bindings.parameter_default_values(),
+            )
+            .ok_or(AssetLoadError::DrawableMeshes)?;
+
+        Ok(DefaultModel {
+            model: self.model,
+            canvas: self.canvas,
+            meshes,
+            textures: self.textures,
+        })
+    }
+
+    fn into_runtime_model(
+        self,
+        model_dir: Option<PathBuf>,
+    ) -> Result<RuntimeModel, AssetLoadError> {
+        let runtime = ModelRuntime::new(
+            self.model,
+            self.canvas,
+            self.art_meshes,
+            self.art_mesh_keyforms,
+            self.deformers,
+            self.bindings,
+            self.ids,
+            self.offscreen,
+            self.glues,
+            self.parts,
+            self.draw_order_groups,
+            self.pose,
+        )
+        .ok_or(AssetLoadError::DrawableMeshes)?;
+
+        Ok(RuntimeModel {
+            runtime,
+            textures: self.textures,
+            model_dir,
+        })
+    }
 }
 
 fn parse_model(path: impl AsRef<Path>) -> Result<ParsedModel, AssetLoadError> {

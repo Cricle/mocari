@@ -130,18 +130,8 @@ impl ModelRuntime {
     ) -> Option<Self> {
         let parameter_values = bindings.parameter_default_values().to_vec();
         let parameter_overrides = vec![None; parameter_values.len()];
-        let parameter_index = ids
-            .parameters()
-            .iter()
-            .enumerate()
-            .map(|(index, id)| (id.clone(), index))
-            .collect();
-        let part_index: HashMap<String, usize> = ids
-            .parts()
-            .iter()
-            .enumerate()
-            .map(|(index, id)| (id.clone(), index))
-            .collect();
+        let parameter_index = build_index(ids.parameters());
+        let part_index = build_index(ids.parts());
         let part_count = parts.part_count();
 
         let pose_fade_time = pose
@@ -229,10 +219,11 @@ impl ModelRuntime {
 
     /// Returns metadata and the current value for a parameter index.
     pub fn parameter_info_by_index(&self, index: usize) -> Option<ParameterInfo<'_>> {
+        let (minimum, maximum) = self.parameter_range_by_index(index)?;
         Some(ParameterInfo {
             id: self.ids.parameters().get(index)?.as_str(),
-            minimum: self.parameter_minimum_by_index(index)?,
-            maximum: self.parameter_maximum_by_index(index)?,
+            minimum,
+            maximum,
             default: self.parameter_default_by_index(index)?,
             value: self.parameter_value_by_index(index)?,
         })
@@ -289,18 +280,7 @@ impl ModelRuntime {
         let Some(slot) = self.parameter_values.get_mut(index) else {
             return false;
         };
-        let minimum = self
-            .bindings
-            .parameter_min_values()
-            .get(index)
-            .copied()
-            .unwrap_or(f32::MIN);
-        let maximum = self
-            .bindings
-            .parameter_max_values()
-            .get(index)
-            .copied()
-            .unwrap_or(f32::MAX);
+        let (minimum, maximum) = parameter_clamp_range(&self.bindings, index);
         *slot = clamp_parameter_value(value, minimum, maximum);
         true
     }
@@ -362,10 +342,7 @@ impl ModelRuntime {
         if index >= self.parameter_overrides.len() {
             return false;
         }
-        let Some(minimum) = self.parameter_minimum_by_index(index) else {
-            return false;
-        };
-        let Some(maximum) = self.parameter_maximum_by_index(index) else {
+        let Some((minimum, maximum)) = self.parameter_range_by_index(index) else {
             return false;
         };
         self.parameter_overrides[index] = Some(clamp_parameter_value(value, minimum, maximum));
@@ -420,10 +397,10 @@ impl ModelRuntime {
     }
 
     fn raw_parameter_value_from_normalized_index(&self, index: usize, value: f32) -> Option<f32> {
-        let minimum = self.parameter_minimum_by_index(index)?;
-        let maximum = self.parameter_maximum_by_index(index)?;
-        let amount = value.clamp(0.0, 1.0);
-        Some(minimum + (maximum - minimum) * amount)
+        let (minimum, maximum) = self.parameter_range_by_index(index)?;
+        Some(raw_parameter_value_from_normalized_range(
+            minimum, maximum, value,
+        ))
     }
 
     /// Resets current parameter values to the defaults declared by the model.
@@ -522,11 +499,18 @@ impl ModelRuntime {
     }
 
     fn update_part_opacities(&mut self) {
+        self.update_direct_part_opacities();
+        self.apply_parent_part_opacities();
+    }
+
+    fn update_direct_part_opacities(&mut self) {
         for index in 0..self.part_opacities.len() {
             let base = self.part_drawable_opacity(index);
             self.part_opacities[index] = base * self.pose_opacities[index];
         }
+    }
 
+    fn apply_parent_part_opacities(&mut self) {
         for index in 0..self.part_opacities.len() {
             let mut opacity = self.part_opacities[index];
             let mut parent = self.parts.parent_part_index(index);
@@ -558,6 +542,11 @@ impl ModelRuntime {
     pub fn update_meshes(&mut self) -> Option<()> {
         self.update_part_opacities();
         let drawable_part_opacities = self.drawable_part_opacities();
+        self.rebuild_or_update_meshes(&drawable_part_opacities)?;
+        self.apply_mesh_post_processing()
+    }
+
+    fn rebuild_or_update_meshes(&mut self, drawable_part_opacities: &[f32]) -> Option<()> {
         if self.meshes.len() == self.art_meshes.meshes().len() {
             update_moc3_drawable_meshes_with_parameters_offscreen_and_part_opacities(
                 &mut self.meshes,
@@ -569,7 +558,7 @@ impl ModelRuntime {
                 &self.ids,
                 &self.offscreen,
                 &self.parameter_values,
-                &drawable_part_opacities,
+                drawable_part_opacities,
             )?;
         } else {
             self.meshes = build_moc3_drawable_meshes_with_parameters_offscreen_and_part_opacities(
@@ -580,9 +569,13 @@ impl ModelRuntime {
                 &self.ids,
                 &self.offscreen,
                 &self.parameter_values,
-                &drawable_part_opacities,
+                drawable_part_opacities,
             )?;
         }
+        Some(())
+    }
+
+    fn apply_mesh_post_processing(&mut self) -> Option<()> {
         self.glues
             .apply(&mut self.meshes, &self.bindings, &self.parameter_values)?;
         self.apply_group_render_orders();
@@ -633,6 +626,13 @@ impl ModelRuntime {
     pub fn meshes(&self) -> &[Moc3DrawableMesh] {
         &self.meshes
     }
+
+    fn parameter_range_by_index(&self, index: usize) -> Option<(f32, f32)> {
+        Some((
+            self.parameter_minimum_by_index(index)?,
+            self.parameter_maximum_by_index(index)?,
+        ))
+    }
 }
 
 fn normalized_parameter_value(value: f32, minimum: f32, maximum: f32) -> f32 {
@@ -641,6 +641,32 @@ fn normalized_parameter_value(value: f32, minimum: f32, maximum: f32) -> f32 {
     } else {
         ((value - minimum) / (maximum - minimum)).clamp(0.0, 1.0)
     }
+}
+
+fn raw_parameter_value_from_normalized_range(minimum: f32, maximum: f32, value: f32) -> f32 {
+    let amount = value.clamp(0.0, 1.0);
+    minimum + (maximum - minimum) * amount
+}
+
+fn parameter_clamp_range(bindings: &Moc3KeyformBindings, index: usize) -> (f32, f32) {
+    let minimum = bindings
+        .parameter_min_values()
+        .get(index)
+        .copied()
+        .unwrap_or(f32::MIN);
+    let maximum = bindings
+        .parameter_max_values()
+        .get(index)
+        .copied()
+        .unwrap_or(f32::MAX);
+    (minimum, maximum)
+}
+
+fn build_index(ids: &[String]) -> HashMap<String, usize> {
+    ids.iter()
+        .enumerate()
+        .map(|(index, id)| (id.clone(), index))
+        .collect()
 }
 
 fn build_pose_groups(pose: &Pose3, part_index: &HashMap<String, usize>) -> Vec<PoseGroup> {
