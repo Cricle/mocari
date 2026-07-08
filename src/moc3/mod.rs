@@ -1,3 +1,11 @@
+//! Parsers and mesh builders for `.moc3` binary model data.
+//!
+//! The types in this module expose the pieces needed to build drawable meshes
+//! from model parameters: canvas information, ids, keyforms, deformers, glues,
+//! parts, and draw-order groups. Most applications should prefer
+//! [`crate::assets::load_model_runtime`], while renderer and tooling authors may
+//! use these building blocks directly.
+
 mod art_meshes;
 mod canvas;
 mod compose;

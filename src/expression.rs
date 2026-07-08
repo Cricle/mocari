@@ -1,3 +1,9 @@
+//! Cubism expression playback and blending.
+//!
+//! Expressions are short parameter blends loaded from `exp3.json` files. Use
+//! [`ExpressionPlayer`] for one expression, or [`ExpressionManager`] when the app
+//! should fade older expressions out as newer ones start.
+
 use std::{fs, path::Path};
 
 use crate::{
@@ -11,6 +17,7 @@ const DEFAULT_ADDITIVE_VALUE: f32 = 0.0;
 const DEFAULT_MULTIPLY_VALUE: f32 = 1.0;
 
 #[derive(Debug, Clone)]
+/// Plays one parsed `exp3.json` expression against a [`ModelRuntime`].
 pub struct ExpressionPlayer {
     expression: Expression3,
     time: f32,
@@ -20,6 +27,7 @@ pub struct ExpressionPlayer {
 }
 
 impl ExpressionPlayer {
+    /// Creates a player at time `0.0` with full weight.
     pub fn new(expression: Expression3) -> Self {
         Self {
             expression,
@@ -30,40 +38,51 @@ impl ExpressionPlayer {
         }
     }
 
+    /// Returns the expression data owned by this player.
     pub fn expression(&self) -> &Expression3 {
         &self.expression
     }
 
+    /// Returns the current playback time in seconds.
     pub fn time(&self) -> f32 {
         self.time
     }
 
+    /// Returns the player's global blend weight.
     pub fn weight(&self) -> f32 {
         self.weight
     }
 
+    /// Sets the player's global blend weight, clamped to `0.0..=1.0`.
     pub fn set_weight(&mut self, weight: f32) {
         self.weight = weight.clamp(0.0, 1.0);
     }
 
+    /// Returns the combined global, fade-in, and fade-out weight.
     pub fn fade_weight(&self) -> f32 {
         self.weight * self.fade_in_weight() * self.fade_out_weight()
     }
 
+    /// Returns whether this expression is currently fading out.
     pub fn is_fading_out(&self) -> bool {
         self.fade_out_started_at.is_some()
     }
 
+    /// Returns whether this expression has fully faded out.
     pub fn is_finished(&self) -> bool {
         self.finished
     }
 
+    /// Restarts the expression and cancels any active fade-out.
     pub fn restart(&mut self) {
         self.time = 0.0;
         self.fade_out_started_at = None;
         self.finished = false;
     }
 
+    /// Begins fading the expression out.
+    ///
+    /// If the expression declares a zero fade-out time, it finishes immediately.
     pub fn start_fade_out(&mut self) {
         if self.finished || self.fade_out_started_at.is_some() {
             return;
@@ -77,6 +96,9 @@ impl ExpressionPlayer {
         }
     }
 
+    /// Advances expression time by `delta_seconds`.
+    ///
+    /// Negative deltas are treated as zero.
     pub fn tick(&mut self, delta_seconds: f32) {
         if self.finished {
             return;
@@ -91,6 +113,10 @@ impl ExpressionPlayer {
         }
     }
 
+    /// Applies this expression's current parameter values to a runtime.
+    ///
+    /// Unknown parameter ids are ignored. Call [`ModelRuntime::update_meshes`]
+    /// after all parameter-producing systems have run for the frame.
     pub fn apply(&self, runtime: &mut ModelRuntime) {
         if self.finished {
             return;
@@ -132,15 +158,22 @@ impl ExpressionPlayer {
 }
 
 #[derive(Debug, Clone, Default)]
+/// Manages a stack of expressions with Cubism-style fade transitions.
+///
+/// Calling [`play`](Self::play) starts a new expression and fades out older
+/// players. The manager keeps overlapping players long enough to blend smoothly,
+/// then drops finished expressions during [`tick`](Self::tick).
 pub struct ExpressionManager {
     players: Vec<ExpressionPlayer>,
 }
 
 impl ExpressionManager {
+    /// Creates an empty expression manager.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Starts an expression and fades out currently active expressions.
     pub fn play(&mut self, expression: Expression3) {
         for player in &mut self.players {
             player.start_fade_out();
@@ -148,12 +181,14 @@ impl ExpressionManager {
         self.players.push(ExpressionPlayer::new(expression));
     }
 
+    /// Starts fading out every active expression.
     pub fn stop_all(&mut self) {
         for player in &mut self.players {
             player.start_fade_out();
         }
     }
 
+    /// Advances all active expression players by `delta_seconds`.
     pub fn tick(&mut self, delta_seconds: f32) {
         for player in &mut self.players {
             player.tick(delta_seconds);
@@ -174,6 +209,10 @@ impl ExpressionManager {
         }
     }
 
+    /// Applies all active expressions to a runtime.
+    ///
+    /// The manager combines additive, multiply, and overwrite blends before
+    /// writing parameter values.
     pub fn apply(&self, runtime: &mut ModelRuntime) {
         let mut values = expression_parameter_values(&self.players, runtime);
         if values.is_empty() {
@@ -206,10 +245,12 @@ impl ExpressionManager {
         }
     }
 
+    /// Returns the number of expression players still being blended.
     pub fn active_expression_count(&self) -> usize {
         self.players.len()
     }
 
+    /// Returns whether there are no active expression players.
     pub fn is_empty(&self) -> bool {
         self.players.is_empty()
     }
@@ -306,6 +347,7 @@ fn interpolate(source: f32, destination: f32, weight: f32) -> f32 {
     (source * (1.0 - weight)) + (destination * weight)
 }
 
+/// Loads a Cubism `exp3.json` file from disk.
 pub fn load_expression(path: impl AsRef<Path>) -> Result<Expression3, ExpressionLoadError> {
     let path = path.as_ref();
     let source = fs::read_to_string(path).map_err(|source| ExpressionLoadError::Io {
@@ -316,11 +358,16 @@ pub fn load_expression(path: impl AsRef<Path>) -> Result<Expression3, Expression
 }
 
 #[derive(Debug)]
+/// Errors that can occur while loading an expression file.
 pub enum ExpressionLoadError {
+    /// The expression file could not be read.
     Io {
+        /// Path of the file that failed to load.
         path: String,
+        /// Original I/O error.
         source: std::io::Error,
     },
+    /// The expression JSON was invalid or unsupported.
     Parse(crate::Error),
 }
 

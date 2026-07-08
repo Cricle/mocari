@@ -1,3 +1,9 @@
+//! Cubism motion playback.
+//!
+//! Load a motion with [`crate::motion::load_motion`], wrap it in a
+//! [`MotionPlayer`], and call [`MotionPlayer::tick`] plus [`MotionPlayer::apply`]
+//! each frame before updating runtime meshes.
+
 use std::{fs, path::Path};
 
 use crate::{
@@ -12,6 +18,11 @@ const PARAMETER_TARGET: &str = "Parameter";
 const PART_OPACITY_TARGET: &str = "PartOpacity";
 
 #[derive(Debug, Clone)]
+/// Plays a parsed `motion3.json` animation against a [`ModelRuntime`].
+///
+/// A player owns playback time and blend weight. It does not update meshes by
+/// itself; call [`ModelRuntime::update_meshes`] after applying one or more
+/// players.
 pub struct MotionPlayer {
     motion: Motion3,
     time: f32,
@@ -20,6 +31,7 @@ pub struct MotionPlayer {
 }
 
 impl MotionPlayer {
+    /// Creates a player at time `0.0` with full weight.
     pub fn new(motion: Motion3) -> Self {
         Self {
             motion,
@@ -29,31 +41,41 @@ impl MotionPlayer {
         }
     }
 
+    /// Returns the motion data owned by this player.
     pub fn motion(&self) -> &Motion3 {
         &self.motion
     }
 
+    /// Returns the current playback time in seconds.
     pub fn time(&self) -> f32 {
         self.time
     }
 
+    /// Returns the player's global blend weight.
     pub fn weight(&self) -> f32 {
         self.weight
     }
 
+    /// Sets the player's global blend weight, clamped to `0.0..=1.0`.
     pub fn set_weight(&mut self, weight: f32) {
         self.weight = weight.clamp(0.0, 1.0);
     }
 
+    /// Returns whether a non-looping motion has reached its end.
     pub fn is_finished(&self) -> bool {
         self.finished
     }
 
+    /// Restarts playback from the beginning.
     pub fn restart(&mut self) {
         self.time = 0.0;
         self.finished = false;
     }
 
+    /// Advances playback time by `delta_seconds`.
+    ///
+    /// Negative deltas are treated as zero. Looping motions wrap at their
+    /// declared duration; non-looping motions stop at the end.
     pub fn tick(&mut self, delta_seconds: f32) {
         if self.finished {
             return;
@@ -73,6 +95,11 @@ impl MotionPlayer {
         }
     }
 
+    /// Applies the current motion sample to a model runtime.
+    ///
+    /// Curves targeting unknown parameters or parts are ignored. Call
+    /// [`ModelRuntime::update_meshes`] after all motion and expression players
+    /// have been applied for the frame.
     pub fn apply(&self, runtime: &mut ModelRuntime) {
         let duration = self.motion.meta().duration();
         let end_time = if self.motion.meta().is_looping() {
@@ -122,6 +149,7 @@ impl MotionPlayer {
     }
 }
 
+/// Loads a Cubism `motion3.json` file from disk.
 pub fn load_motion(path: impl AsRef<Path>) -> Result<Motion3, MotionLoadError> {
     let path = path.as_ref();
     let source = fs::read_to_string(path).map_err(|source| MotionLoadError::Io {
@@ -132,11 +160,16 @@ pub fn load_motion(path: impl AsRef<Path>) -> Result<Motion3, MotionLoadError> {
 }
 
 #[derive(Debug)]
+/// Errors that can occur while loading a motion file.
 pub enum MotionLoadError {
+    /// The motion file could not be read.
     Io {
+        /// Path of the file that failed to load.
         path: String,
+        /// Original I/O error.
         source: std::io::Error,
     },
+    /// The motion JSON was invalid or unsupported.
     Parse(crate::Error),
 }
 

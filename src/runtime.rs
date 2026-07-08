@@ -1,3 +1,10 @@
+//! Mutable state for driving a loaded model.
+//!
+//! [`ModelRuntime`] is the type most applications update every frame. It stores
+//! parameter values, part opacity overrides, pose state, and the current drawable
+//! meshes. After changing parameters or applying a player from [`crate::motion`]
+//! or [`crate::expression`], call [`ModelRuntime::update_meshes`] before drawing.
+
 use std::collections::HashMap;
 
 use crate::{
@@ -19,6 +26,11 @@ struct PoseGroup {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
+/// A read-only view of one model parameter.
+///
+/// Values are reported in the model's native parameter range. Use
+/// [`normalized_value`](Self::normalized_value) when UI code wants a stable
+/// `0.0..=1.0` representation.
 pub struct ParameterInfo<'a> {
     id: &'a str,
     minimum: f32,
@@ -28,32 +40,49 @@ pub struct ParameterInfo<'a> {
 }
 
 impl<'a> ParameterInfo<'a> {
+    /// Returns the Cubism parameter id, such as `ParamAngleX`.
     pub fn id(&self) -> &'a str {
         self.id
     }
 
+    /// Returns the minimum value declared by the model.
     pub fn minimum(&self) -> f32 {
         self.minimum
     }
 
+    /// Returns the maximum value declared by the model.
     pub fn maximum(&self) -> f32 {
         self.maximum
     }
 
+    /// Returns the default value declared by the model.
     pub fn default(&self) -> f32 {
         self.default
     }
 
+    /// Returns the current runtime value.
     pub fn value(&self) -> f32 {
         self.value
     }
 
+    /// Returns the current value mapped into `0.0..=1.0`.
+    ///
+    /// If the model declares an invalid range where `maximum <= minimum`, this
+    /// returns `0.0`.
     pub fn normalized_value(&self) -> f32 {
         normalized_parameter_value(self.value, self.minimum, self.maximum)
     }
 }
 
 #[derive(Debug, Clone)]
+/// Runtime state for a loaded Live2D/Cubism-compatible model.
+///
+/// The runtime owns the current parameter values and the generated drawable
+/// meshes. A typical frame updates parameters, applies motion and expression
+/// players, applies pose fading if needed, then calls [`update_meshes`](Self::update_meshes).
+///
+/// Applications usually create this through [`crate::assets::load_model_runtime`]
+/// instead of calling [`new`](Self::new) directly.
 pub struct ModelRuntime {
     model: Model3,
     canvas: Moc3CanvasInfo,
@@ -80,6 +109,10 @@ pub struct ModelRuntime {
 }
 
 impl ModelRuntime {
+    /// Builds a runtime from already parsed model components.
+    ///
+    /// This constructor is intended for custom loaders and tests. It returns
+    /// `None` when the parsed parts cannot produce a valid initial mesh set.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         model: Model3,
@@ -149,40 +182,52 @@ impl ModelRuntime {
         Some(runtime)
     }
 
+    /// Returns the parsed `.model3.json` data associated with this runtime.
     pub fn model(&self) -> &Model3 {
         &self.model
     }
 
+    /// Returns the model canvas information parsed from the `.moc3` file.
     pub fn canvas(&self) -> Moc3CanvasInfo {
         self.canvas
     }
 
+    /// Returns all parameter ids in model order.
     pub fn parameter_ids(&self) -> &[String] {
         self.ids.parameters()
     }
 
+    /// Returns the model-order index for a parameter id.
+    ///
+    /// Cache this index in hot paths and use the `*_by_index` methods to avoid a
+    /// string lookup each frame.
     pub fn parameter_index(&self, id: &str) -> Option<usize> {
         self.parameter_index.get(id).copied()
     }
 
+    /// Returns the current value for a parameter id.
     pub fn parameter_value(&self, id: &str) -> Option<f32> {
         let index = self.parameter_index(id)?;
         self.parameter_values.get(index).copied()
     }
 
+    /// Returns the current value for a parameter index.
     pub fn parameter_value_by_index(&self, index: usize) -> Option<f32> {
         self.parameter_values.get(index).copied()
     }
 
+    /// Returns all current parameter values in model order.
     pub fn parameter_values(&self) -> &[f32] {
         &self.parameter_values
     }
 
+    /// Returns metadata and the current value for a parameter id.
     pub fn parameter_info(&self, id: &str) -> Option<ParameterInfo<'_>> {
         let index = self.parameter_index(id)?;
         self.parameter_info_by_index(index)
     }
 
+    /// Returns metadata and the current value for a parameter index.
     pub fn parameter_info_by_index(&self, index: usize) -> Option<ParameterInfo<'_>> {
         Some(ParameterInfo {
             id: self.ids.parameters().get(index)?.as_str(),
@@ -193,27 +238,33 @@ impl ModelRuntime {
         })
     }
 
+    /// Iterates over all parameters with their ranges and current values.
     pub fn parameter_infos(&self) -> impl Iterator<Item = ParameterInfo<'_>> + '_ {
         (0..self.ids.parameters().len()).filter_map(|index| self.parameter_info_by_index(index))
     }
 
+    /// Returns the declared minimum value for a parameter index.
     pub fn parameter_minimum_by_index(&self, index: usize) -> Option<f32> {
         self.bindings.parameter_min_values().get(index).copied()
     }
 
+    /// Returns the declared maximum value for a parameter index.
     pub fn parameter_maximum_by_index(&self, index: usize) -> Option<f32> {
         self.bindings.parameter_max_values().get(index).copied()
     }
 
+    /// Returns the declared default value for a parameter index.
     pub fn parameter_default_by_index(&self, index: usize) -> Option<f32> {
         self.bindings.parameter_default_values().get(index).copied()
     }
 
+    /// Returns the current parameter value mapped into `0.0..=1.0`.
     pub fn parameter_normalized_value(&self, id: &str) -> Option<f32> {
         let index = self.parameter_index(id)?;
         self.parameter_normalized_value_by_index(index)
     }
 
+    /// Returns the current parameter value for an index mapped into `0.0..=1.0`.
     pub fn parameter_normalized_value_by_index(&self, index: usize) -> Option<f32> {
         let minimum = self.parameter_minimum_by_index(index)?;
         let maximum = self.parameter_maximum_by_index(index)?;
@@ -221,6 +272,9 @@ impl ModelRuntime {
         Some(normalized_parameter_value(value, minimum, maximum))
     }
 
+    /// Sets a parameter by id, clamping the value to the model's declared range.
+    ///
+    /// Returns `false` when the id is not present in the model.
     pub fn set_parameter(&mut self, id: &str, value: f32) -> bool {
         match self.parameter_index(id) {
             Some(index) => self.set_parameter_by_index(index, value),
@@ -228,6 +282,9 @@ impl ModelRuntime {
         }
     }
 
+    /// Sets a parameter by index, clamping the value to the model's declared range.
+    ///
+    /// Returns `false` when the index is out of range.
     pub fn set_parameter_by_index(&mut self, index: usize, value: f32) -> bool {
         let Some(slot) = self.parameter_values.get_mut(index) else {
             return false;
@@ -248,6 +305,7 @@ impl ModelRuntime {
         true
     }
 
+    /// Sets a parameter with a normalized `0.0..=1.0` value.
     pub fn set_parameter_normalized(&mut self, id: &str, value: f32) -> bool {
         match self.parameter_index(id) {
             Some(index) => self.set_parameter_normalized_by_index(index, value),
@@ -255,6 +313,7 @@ impl ModelRuntime {
         }
     }
 
+    /// Sets a parameter by index with a normalized `0.0..=1.0` value.
     pub fn set_parameter_normalized_by_index(&mut self, index: usize, value: f32) -> bool {
         let Some(raw) = self.raw_parameter_value_from_normalized_index(index, value) else {
             return false;
@@ -262,20 +321,27 @@ impl ModelRuntime {
         self.set_parameter_by_index(index, raw)
     }
 
+    /// Returns the pending override value for a parameter id.
+    ///
+    /// Overrides are separate from current parameter values until
+    /// [`apply_parameter_overrides`](Self::apply_parameter_overrides) is called.
     pub fn parameter_override_value(&self, id: &str) -> Option<f32> {
         let index = self.parameter_index(id)?;
         self.parameter_override_value_by_index(index)
     }
 
+    /// Returns the pending override value for a parameter index.
     pub fn parameter_override_value_by_index(&self, index: usize) -> Option<f32> {
         self.parameter_overrides.get(index).copied().flatten()
     }
 
+    /// Returns the pending override value mapped into `0.0..=1.0`.
     pub fn parameter_override_normalized_value(&self, id: &str) -> Option<f32> {
         let index = self.parameter_index(id)?;
         self.parameter_override_normalized_value_by_index(index)
     }
 
+    /// Returns the pending override value for an index mapped into `0.0..=1.0`.
     pub fn parameter_override_normalized_value_by_index(&self, index: usize) -> Option<f32> {
         let minimum = self.parameter_minimum_by_index(index)?;
         let maximum = self.parameter_maximum_by_index(index)?;
@@ -283,6 +349,7 @@ impl ModelRuntime {
         Some(normalized_parameter_value(value, minimum, maximum))
     }
 
+    /// Stores a parameter override by id without immediately changing the value.
     pub fn set_parameter_override(&mut self, id: &str, value: f32) -> bool {
         match self.parameter_index(id) {
             Some(index) => self.set_parameter_override_by_index(index, value),
@@ -290,6 +357,7 @@ impl ModelRuntime {
         }
     }
 
+    /// Stores a parameter override by index without immediately changing the value.
     pub fn set_parameter_override_by_index(&mut self, index: usize, value: f32) -> bool {
         if index >= self.parameter_overrides.len() {
             return false;
@@ -304,6 +372,7 @@ impl ModelRuntime {
         true
     }
 
+    /// Stores a normalized parameter override by id.
     pub fn set_parameter_override_normalized(&mut self, id: &str, value: f32) -> bool {
         match self.parameter_index(id) {
             Some(index) => self.set_parameter_override_normalized_by_index(index, value),
@@ -311,6 +380,7 @@ impl ModelRuntime {
         }
     }
 
+    /// Stores a normalized parameter override by index.
     pub fn set_parameter_override_normalized_by_index(&mut self, index: usize, value: f32) -> bool {
         let Some(raw) = self.raw_parameter_value_from_normalized_index(index, value) else {
             return false;
@@ -318,6 +388,7 @@ impl ModelRuntime {
         self.set_parameter_override_by_index(index, raw)
     }
 
+    /// Clears a pending override for a parameter id.
     pub fn clear_parameter_override(&mut self, id: &str) -> bool {
         match self.parameter_index(id) {
             Some(index) => self.clear_parameter_override_by_index(index),
@@ -325,6 +396,7 @@ impl ModelRuntime {
         }
     }
 
+    /// Clears a pending override for a parameter index.
     pub fn clear_parameter_override_by_index(&mut self, index: usize) -> bool {
         let Some(slot) = self.parameter_overrides.get_mut(index) else {
             return false;
@@ -333,10 +405,12 @@ impl ModelRuntime {
         true
     }
 
+    /// Clears all pending parameter overrides.
     pub fn clear_parameter_overrides(&mut self) {
         self.parameter_overrides.fill(None);
     }
 
+    /// Applies all pending parameter overrides to the current parameter values.
     pub fn apply_parameter_overrides(&mut self) {
         for index in 0..self.parameter_overrides.len() {
             if let Some(value) = self.parameter_overrides[index] {
@@ -352,19 +426,26 @@ impl ModelRuntime {
         Some(minimum + (maximum - minimum) * amount)
     }
 
+    /// Resets current parameter values to the defaults declared by the model.
     pub fn reset_parameters(&mut self) {
         self.parameter_values
             .copy_from_slice(self.bindings.parameter_default_values());
     }
 
+    /// Returns all part ids in model order.
     pub fn part_ids(&self) -> &[String] {
         self.ids.parts()
     }
 
+    /// Returns the model-order index for a part id.
     pub fn part_index(&self, id: &str) -> Option<usize> {
         self.part_index.get(id).copied()
     }
 
+    /// Overrides a part opacity by id.
+    ///
+    /// Values are clamped to `0.0..=1.0`. Pose fading can still affect the final
+    /// drawable opacity after this override is applied.
     pub fn set_part_opacity(&mut self, id: &str, value: f32) -> bool {
         match self.part_index(id) {
             Some(index) => self.set_part_opacity_by_index(index, value),
@@ -372,6 +453,7 @@ impl ModelRuntime {
         }
     }
 
+    /// Overrides a part opacity by index.
     pub fn set_part_opacity_by_index(&mut self, index: usize, value: f32) -> bool {
         let Some(slot) = self.part_opacity_overrides.get_mut(index) else {
             return false;
@@ -380,12 +462,16 @@ impl ModelRuntime {
         true
     }
 
+    /// Clears all part opacity overrides.
     pub fn reset_part_opacities(&mut self) {
         self.part_opacity_overrides
             .iter_mut()
             .for_each(|o| *o = None);
     }
 
+    /// Advances pose fade state by `delta_seconds`.
+    ///
+    /// Call this once per frame for models that include a `pose3.json` file.
     pub fn apply_pose(&mut self, delta_seconds: f32) {
         for group in &self.pose_groups {
             let selection: Vec<f32> = group
@@ -464,6 +550,11 @@ impl ModelRuntime {
             .collect()
     }
 
+    /// Rebuilds drawable meshes from the current runtime state.
+    ///
+    /// Call this after changing parameters, applying motion or expression
+    /// players, changing part opacities, or advancing pose state. Returns `None`
+    /// when the model data cannot produce a valid mesh update.
     pub fn update_meshes(&mut self) -> Option<()> {
         self.update_part_opacities();
         let drawable_part_opacities = self.drawable_part_opacities();
@@ -535,6 +626,10 @@ impl ModelRuntime {
         }
     }
 
+    /// Returns the current drawable meshes in model order.
+    ///
+    /// Sort with [`crate::render::common::draw_order_indices`] or use a renderer
+    /// backend before issuing draw calls.
     pub fn meshes(&self) -> &[Moc3DrawableMesh] {
         &self.meshes
     }

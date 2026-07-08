@@ -2,6 +2,10 @@ use crate::core::{Matrix44, draw_order_from_raw};
 use crate::moc3::{Moc3DrawableBlendMode, Moc3DrawableMesh, Moc3DrawableVertex};
 
 #[derive(Debug, Clone, PartialEq)]
+/// Render-facing metadata extracted from a drawable mesh.
+///
+/// Build this with [`DrawableInfo::from_mesh`] before sorting draw order or
+/// preparing clipping masks.
 pub struct DrawableInfo {
     texture_index: i32,
     blend_mode: Moc3DrawableBlendMode,
@@ -14,6 +18,7 @@ pub struct DrawableInfo {
 }
 
 impl DrawableInfo {
+    /// Creates render metadata from a runtime drawable mesh.
     pub fn from_mesh(mesh: &Moc3DrawableMesh) -> Self {
         Self {
             texture_index: mesh.texture_index(),
@@ -27,43 +32,53 @@ impl DrawableInfo {
         }
     }
 
+    /// Returns the texture index referenced by this drawable.
     pub fn texture_index(&self) -> i32 {
         self.texture_index
     }
 
+    /// Returns the drawable blend mode.
     pub fn blend_mode(&self) -> Moc3DrawableBlendMode {
         self.blend_mode
     }
 
+    /// Returns the drawable opacity.
     pub fn opacity(&self) -> f32 {
         self.opacity
     }
 
+    /// Returns whether this drawable has non-zero opacity and valid bounds.
     pub fn is_visible(&self) -> bool {
         self.opacity > 0.0 && self.bounds.is_some()
     }
 
+    /// Returns the raw draw order value.
     pub fn draw_order(&self) -> f32 {
         self.draw_order
     }
 
+    /// Returns the runtime render order value.
     pub fn render_order(&self) -> i32 {
         self.render_order
     }
 
+    /// Returns drawable indices used as masks for this drawable.
     pub fn masks(&self) -> &[i32] {
         &self.masks
     }
 
+    /// Returns whether this drawable uses inverted mask semantics.
     pub fn inverted_mask(&self) -> bool {
         self.inverted_mask
     }
 
+    /// Returns the model-space bounding rectangle for this drawable.
     pub fn bounds(&self) -> Option<ClippingRect> {
         self.bounds
     }
 }
 
+/// Returns drawable indices sorted in the order they should be rendered.
 pub fn draw_order_indices(drawables: &[DrawableInfo]) -> Vec<usize> {
     draw_order_indices_from(
         drawables.len(),
@@ -137,14 +152,20 @@ fn drawable_vertex_bounds(vertices: &[Moc3DrawableVertex]) -> Option<ClippingRec
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+/// One RGBA channel in a shared mask texture.
 pub enum MaskChannel {
+    /// Red channel.
     Red,
+    /// Green channel.
     Green,
+    /// Blue channel.
     Blue,
+    /// Alpha channel.
     Alpha,
 }
 
 impl MaskChannel {
+    /// Returns the zero-based channel index.
     pub fn index(self) -> usize {
         match self {
             Self::Red => 0,
@@ -154,6 +175,7 @@ impl MaskChannel {
         }
     }
 
+    /// Returns a shader-friendly one-hot channel flag.
     pub fn flag(self) -> [f32; 4] {
         match self {
             Self::Red => [1.0, 0.0, 0.0, 0.0],
@@ -175,6 +197,7 @@ impl MaskChannel {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
+/// Axis-aligned rectangle used for drawable bounds and mask atlas regions.
 pub struct ClippingRect {
     x: f32,
     y: f32,
@@ -183,6 +206,7 @@ pub struct ClippingRect {
 }
 
 impl ClippingRect {
+    /// Creates a rectangle from origin and size.
     pub fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
         Self {
             x,
@@ -192,18 +216,22 @@ impl ClippingRect {
         }
     }
 
+    /// Returns the x coordinate.
     pub fn x(&self) -> f32 {
         self.x
     }
 
+    /// Returns the y coordinate.
     pub fn y(&self) -> f32 {
         self.y
     }
 
+    /// Returns the rectangle width.
     pub fn width(&self) -> f32 {
         self.width
     }
 
+    /// Returns the rectangle height.
     pub fn height(&self) -> f32 {
         self.height
     }
@@ -229,37 +257,50 @@ impl ClippingRect {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
+/// Assigned location of one clipping context inside a mask texture.
 pub struct ClippingLayout {
     channel: MaskChannel,
     bounds: ClippingRect,
 }
 
 impl ClippingLayout {
+    /// Creates a layout from a channel and normalized texture bounds.
     pub fn new(channel: MaskChannel, bounds: ClippingRect) -> Self {
         Self { channel, bounds }
     }
 
+    /// Returns the mask texture channel used by this layout.
     pub fn channel(&self) -> MaskChannel {
         self.channel
     }
 
+    /// Returns a shader-friendly one-hot channel flag.
     pub fn channel_flag(&self) -> [f32; 4] {
         self.channel.flag()
     }
 
+    /// Returns normalized mask texture bounds.
     pub fn bounds(&self) -> ClippingRect {
         self.bounds
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Errors produced while preparing clipping mask layouts.
 pub enum ClippingLayoutError {
+    /// The single-texture layout has more contexts than its RGBA grid supports.
     TooManyMasksForSingleTexture { mask_count: usize },
+    /// A drawable needed for clipping has no valid bounds.
     MissingDrawableBounds { drawable_index: usize },
+    /// A clipping context has not been assigned a layout.
     MissingLayout { context_index: usize },
+    /// A clipping context has no matrix for rendering its mask.
     MissingMaskMatrix { context_index: usize },
+    /// A clipping context has no matrix for drawing clipped meshes.
     MissingDrawMatrix { context_index: usize },
+    /// A mask drawable index did not point to a drawable.
     InvalidMaskDrawableIndex { drawable_index: i32 },
+    /// The clipped drawable bounds collapsed to zero area.
     DegenerateClippedBounds { context_index: usize },
 }
 
@@ -301,6 +342,7 @@ impl std::fmt::Display for ClippingLayoutError {
 impl std::error::Error for ClippingLayoutError {}
 
 #[derive(Debug, Clone, PartialEq)]
+/// A group of drawables that share the same mask set.
 pub struct ClippingContext {
     masks: Vec<i32>,
     inverted: bool,
@@ -312,42 +354,51 @@ pub struct ClippingContext {
 }
 
 impl ClippingContext {
+    /// Returns drawable indices that act as masks for this context.
     pub fn masks(&self) -> &[i32] {
         &self.masks
     }
 
+    /// Returns whether this context uses inverted mask semantics.
     pub fn inverted(&self) -> bool {
         self.inverted
     }
 
+    /// Returns drawables clipped by this context.
     pub fn drawable_indices(&self) -> &[usize] {
         &self.drawable_indices
     }
 
+    /// Returns the assigned mask texture layout, if prepared.
     pub fn layout(&self) -> Option<ClippingLayout> {
         self.layout
     }
 
+    /// Returns the combined bounds of all drawables clipped by this context.
     pub fn all_clipped_draw_rect(&self) -> Option<ClippingRect> {
         self.all_clipped_draw_rect
     }
 
+    /// Returns the transform used when drawing mask geometry.
     pub fn matrix_for_mask(&self) -> Option<Matrix44> {
         self.matrix_for_mask
     }
 
+    /// Returns the transform used when drawing clipped geometry.
     pub fn matrix_for_draw(&self) -> Option<Matrix44> {
         self.matrix_for_draw
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// A complete clipping plan for one frame of drawable data.
 pub struct ClippingPlan {
     contexts: Vec<ClippingContext>,
     unmasked_drawable_indices: Vec<usize>,
 }
 
 impl ClippingPlan {
+    /// Groups visible drawables by mask set.
     pub fn from_drawables(drawables: &[DrawableInfo]) -> Self {
         let mut contexts = Vec::<ClippingContext>::new();
         let mut unmasked_drawable_indices = Vec::new();
@@ -386,14 +437,19 @@ impl ClippingPlan {
         }
     }
 
+    /// Returns all clipping contexts that need mask rendering.
     pub fn contexts(&self) -> &[ClippingContext] {
         &self.contexts
     }
 
+    /// Returns visible drawable indices that do not use masks.
     pub fn unmasked_drawable_indices(&self) -> &[usize] {
         &self.unmasked_drawable_indices
     }
 
+    /// Assigns clipping contexts into one RGBA mask texture.
+    ///
+    /// The layout supports up to 36 contexts: 9 cells per color channel.
     pub fn assign_single_texture_layouts(&mut self) -> Result<(), ClippingLayoutError> {
         let using_clip_count = self.contexts.len();
         if using_clip_count > 36 {
@@ -422,6 +478,7 @@ impl ClippingPlan {
         Ok(())
     }
 
+    /// Assigns mask layouts and computes mask/draw matrices for each context.
     pub fn prepare_single_texture_masks(
         &mut self,
         drawables: &[DrawableInfo],

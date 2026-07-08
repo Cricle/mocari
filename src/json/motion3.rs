@@ -6,6 +6,7 @@ const FORMAT: &str = "motion3.json";
 const SUPPORTED_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq)]
+/// Parsed Cubism `motion3.json` data.
 pub struct Motion3 {
     version: u32,
     meta: MotionMeta,
@@ -13,6 +14,7 @@ pub struct Motion3 {
 }
 
 impl Motion3 {
+    /// Parses a motion JSON document from a string.
     pub fn from_json_str(source: &str) -> Result<Self> {
         let raw: RawMotion3 = serde_json::from_str(source).map_err(|error| Error::InvalidJson {
             format: FORMAT,
@@ -40,20 +42,24 @@ impl Motion3 {
         })
     }
 
+    /// Returns the supported motion format version.
     pub fn version(&self) -> u32 {
         self.version
     }
 
+    /// Returns motion metadata such as duration, FPS, and loop flag.
     pub fn meta(&self) -> &MotionMeta {
         &self.meta
     }
 
+    /// Returns all animation curves in this motion.
     pub fn curves(&self) -> &[MotionCurve] {
         &self.curves
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
+/// Metadata from a Cubism motion file.
 pub struct MotionMeta {
     #[serde(rename = "Duration")]
     duration: f32,
@@ -76,44 +82,54 @@ pub struct MotionMeta {
 }
 
 impl MotionMeta {
+    /// Returns the motion duration in seconds.
     pub fn duration(&self) -> f32 {
         self.duration
     }
 
+    /// Returns the authoring frames per second value.
     pub fn fps(&self) -> f32 {
         self.fps
     }
 
+    /// Returns whether the motion should loop.
     pub fn is_looping(&self) -> bool {
         self.loop_motion
     }
 
+    /// Returns whether Bezier control points use restricted Cubism semantics.
     pub fn are_beziers_restricted(&self) -> bool {
         self.are_beziers_restricted
     }
 
+    /// Returns the curve count reported by the file metadata.
     pub fn curve_count(&self) -> u32 {
         self.curve_count
     }
 
+    /// Returns the total segment count reported by the file metadata.
     pub fn total_segment_count(&self) -> u32 {
         self.total_segment_count
     }
 
+    /// Returns the total point count reported by the file metadata.
     pub fn total_point_count(&self) -> u32 {
         self.total_point_count
     }
 
+    /// Returns the user-data count reported by the file metadata.
     pub fn user_data_count(&self) -> u32 {
         self.user_data_count
     }
 
+    /// Returns the total user-data byte size reported by the file metadata.
     pub fn total_user_data_size(&self) -> u32 {
         self.total_user_data_size
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// One animated target curve in a motion file.
 pub struct MotionCurve {
     target: String,
     id: String,
@@ -125,30 +141,37 @@ pub struct MotionCurve {
 }
 
 impl MotionCurve {
+    /// Returns the curve target, such as `Parameter` or `PartOpacity`.
     pub fn target(&self) -> &str {
         &self.target
     }
 
+    /// Returns the target parameter or part id.
     pub fn id(&self) -> &str {
         &self.id
     }
 
+    /// Returns the first point in the curve.
     pub fn first_point(&self) -> MotionPoint {
         self.first_point
     }
 
+    /// Returns all segments after the first point.
     pub fn segments(&self) -> &[MotionSegment] {
         &self.segments
     }
 
+    /// Returns the optional per-curve fade-in override.
     pub fn fade_in_time(&self) -> Option<f32> {
         self.fade_in_time
     }
 
+    /// Returns the optional per-curve fade-out override.
     pub fn fade_out_time(&self) -> Option<f32> {
         self.fade_out_time
     }
 
+    /// Samples this curve at a time in seconds.
     pub fn sample(&self, time: f32) -> Option<f32> {
         if time <= self.first_point.time {
             return Some(self.first_point.value);
@@ -183,6 +206,7 @@ impl MotionCurve {
     }
 }
 
+/// Cubism sine easing used for fades.
 pub fn easing_sine(value: f32) -> f32 {
     if value < 0.0 {
         return 0.0;
@@ -195,6 +219,7 @@ pub fn easing_sine(value: f32) -> f32 {
     0.5 - 0.5 * (value * std::f32::consts::PI).cos()
 }
 
+/// Calculates a motion-level fade-in weight.
 pub fn motion_fade_in_weight(
     user_time_seconds: f32,
     fade_in_start_time: f32,
@@ -207,6 +232,7 @@ pub fn motion_fade_in_weight(
     }
 }
 
+/// Calculates a motion-level fade-out weight.
 pub fn motion_fade_out_weight(
     user_time_seconds: f32,
     end_time_seconds: f32,
@@ -220,6 +246,7 @@ pub fn motion_fade_out_weight(
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Combines motion-level and per-curve fade values into one curve weight.
 pub fn parameter_curve_fade_weight(
     motion_weight: f32,
     motion_fade_in: f32,
@@ -254,39 +281,59 @@ pub fn parameter_curve_fade_weight(
     motion_weight * fade_in * fade_out
 }
 
+/// Blends a current value toward a sampled motion value.
 pub fn apply_motion_fade(source_value: f32, target_value: f32, fade_weight: f32) -> f32 {
     source_value + (target_value - source_value) * fade_weight
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
+/// A point on a motion curve.
 pub struct MotionPoint {
+    /// Time in seconds.
     pub time: f32,
+    /// Value at this point.
     pub value: f32,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
+/// Segment interpolation mode between two motion points.
 pub enum MotionSegment {
+    /// Linear interpolation between start and end.
     Linear {
+        /// Start point.
         start: MotionPoint,
+        /// End point.
         end: MotionPoint,
     },
+    /// Cubic Bezier interpolation.
     Bezier {
+        /// Start point.
         start: MotionPoint,
+        /// First control point.
         control1: MotionPoint,
+        /// Second control point.
         control2: MotionPoint,
+        /// End point.
         end: MotionPoint,
     },
+    /// Holds the start value until the segment end.
     Stepped {
+        /// Start point.
         start: MotionPoint,
+        /// End point.
         end: MotionPoint,
     },
+    /// Holds the end value for the segment.
     InverseStepped {
+        /// Start point.
         start: MotionPoint,
+        /// End point.
         end: MotionPoint,
     },
 }
 
 impl MotionSegment {
+    /// Returns the segment end point.
     pub fn end(&self) -> MotionPoint {
         match *self {
             Self::Linear { end, .. }
@@ -296,6 +343,7 @@ impl MotionSegment {
         }
     }
 
+    /// Samples this segment at a time in seconds.
     pub fn sample(&self, time: f32, are_beziers_restricted: bool) -> Option<f32> {
         match *self {
             Self::Linear { start, end } => Some(sample_linear(start, end, time)),

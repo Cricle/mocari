@@ -1,3 +1,10 @@
+//! Convenience loaders for complete Cubism model folders.
+//!
+//! These helpers start from a `.model3.json` path and resolve the files it
+//! references relative to that model file. Use [`crate::assets::load_model_runtime`]
+//! when the application needs per-frame parameter, motion, or expression updates.
+//! Use [`crate::assets::load_model`] for a static default-pose snapshot.
+
 use std::{fmt, fs, path::Path};
 
 use crate::{
@@ -11,6 +18,11 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
+/// A model loaded in its default pose.
+///
+/// This type is useful for import tools, previews, tests, or renderers that only
+/// need the initial mesh data. For animation and interactive parameter changes,
+/// use [`RuntimeModel`] instead.
 pub struct DefaultModel {
     model: Model3,
     canvas: Moc3CanvasInfo,
@@ -19,24 +31,32 @@ pub struct DefaultModel {
 }
 
 impl DefaultModel {
+    /// Returns the parsed `.model3.json` data.
     pub fn model(&self) -> &Model3 {
         &self.model
     }
 
+    /// Returns the model canvas information parsed from the `.moc3` file.
     pub fn canvas(&self) -> Moc3CanvasInfo {
         self.canvas
     }
 
+    /// Returns drawable meshes built from the model's default parameter values.
     pub fn meshes(&self) -> &[Moc3DrawableMesh] {
         &self.meshes
     }
 
+    /// Returns decoded RGBA textures in the order referenced by the model file.
     pub fn textures(&self) -> &[DecodedTexture] {
         &self.textures
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A PNG texture decoded into tightly packed RGBA8 pixels.
+///
+/// The pixel buffer is arranged row-major with four bytes per pixel:
+/// red, green, blue, alpha.
 pub struct DecodedTexture {
     width: u32,
     height: u32,
@@ -44,6 +64,10 @@ pub struct DecodedTexture {
 }
 
 impl DecodedTexture {
+    /// Creates a decoded texture from raw RGBA8 data.
+    ///
+    /// The constructor does not validate that `rgba.len() == width * height * 4`;
+    /// callers that build textures manually should keep those values consistent.
     pub fn new(width: u32, height: u32, rgba: Vec<u8>) -> Self {
         Self {
             width,
@@ -52,34 +76,49 @@ impl DecodedTexture {
         }
     }
 
+    /// Returns the texture width in pixels.
     pub fn width(&self) -> u32 {
         self.width
     }
 
+    /// Returns the texture height in pixels.
     pub fn height(&self) -> u32 {
         self.height
     }
 
+    /// Returns the raw RGBA8 pixel data.
     pub fn rgba(&self) -> &[u8] {
         &self.rgba
     }
 }
 
 #[derive(Debug)]
+/// Errors that can occur while loading a complete model from disk.
 pub enum AssetLoadError {
+    /// A referenced file could not be read.
     Io {
+        /// Path of the file that failed to load.
         path: String,
+        /// Original I/O error.
         source: std::io::Error,
     },
+    /// A Cubism JSON file was invalid or unsupported.
     Json(crate::Error),
+    /// The referenced `.moc3` file was invalid or unsupported.
     Moc3(crate::Error),
+    /// A referenced texture could not be decoded.
     Image {
+        /// Path of the image that failed to decode.
         path: String,
+        /// Original image decoding error.
         source: image::ImageError,
     },
+    /// The supplied model path has no parent directory for resolving assets.
     MissingParent {
+        /// Path that did not have a parent directory.
         path: String,
     },
+    /// Drawable meshes could not be built from the parsed model data.
     DrawableMeshes,
 }
 
@@ -98,6 +137,11 @@ impl fmt::Display for AssetLoadError {
 
 impl std::error::Error for AssetLoadError {}
 
+/// Loads a model as a static default-pose snapshot.
+///
+/// The `path` should point to a `.model3.json` file. Mocari reads the referenced
+/// `.moc3` file and textures from the same model directory, then builds drawable
+/// meshes using the model's default parameter values.
 pub fn load_model(path: impl AsRef<Path>) -> Result<DefaultModel, AssetLoadError> {
     let parsed = parse_model(path)?;
     let mut meshes = build_moc3_drawable_meshes_for_default_pose_with_offscreen_state(
@@ -126,6 +170,12 @@ pub fn load_model(path: impl AsRef<Path>) -> Result<DefaultModel, AssetLoadError
     })
 }
 
+/// Loads a model into a mutable runtime.
+///
+/// This is the main entry point for interactive applications. The returned
+/// [`RuntimeModel`] keeps decoded textures next to a [`ModelRuntime`], so a render
+/// loop can update parameters, apply motions and expressions, call
+/// [`ModelRuntime::update_meshes`], and draw the resulting meshes.
 pub fn load_model_runtime(path: impl AsRef<Path>) -> Result<RuntimeModel, AssetLoadError> {
     let path = path.as_ref();
     let model_dir = path.parent().map(Path::to_path_buf);
@@ -154,6 +204,7 @@ pub fn load_model_runtime(path: impl AsRef<Path>) -> Result<RuntimeModel, AssetL
 }
 
 #[derive(Debug, Clone)]
+/// A loaded model with mutable runtime state and decoded textures.
 pub struct RuntimeModel {
     runtime: ModelRuntime,
     textures: Vec<DecodedTexture>,
@@ -161,18 +212,25 @@ pub struct RuntimeModel {
 }
 
 impl RuntimeModel {
+    /// Returns the immutable runtime state.
     pub fn runtime(&self) -> &ModelRuntime {
         &self.runtime
     }
 
+    /// Returns the mutable runtime state.
+    ///
+    /// Use this in a frame loop to edit parameters, apply motions or expressions,
+    /// and rebuild drawable meshes.
     pub fn runtime_mut(&mut self) -> &mut ModelRuntime {
         &mut self.runtime
     }
 
+    /// Returns decoded textures in the order used by drawable texture indices.
     pub fn textures(&self) -> &[DecodedTexture] {
         &self.textures
     }
 
+    /// Returns the directory that contained the loaded `.model3.json` file.
     pub fn model_dir(&self) -> Option<&Path> {
         self.model_dir.as_deref()
     }

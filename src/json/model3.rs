@@ -8,6 +8,11 @@ const FORMAT: &str = "model3.json";
 const SUPPORTED_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// Parsed Cubism `model3.json` data.
+///
+/// The model file is the manifest for a Live2D model folder. It points to the
+/// `.moc3` file, textures, motions, expressions, physics, pose data, display
+/// metadata, groups, and hit areas.
 pub struct Model3 {
     version: u32,
     file_references: FileReferences,
@@ -16,6 +21,7 @@ pub struct Model3 {
 }
 
 impl Model3 {
+    /// Parses a `model3.json` document from a string.
     pub fn from_json_str(source: &str) -> Result<Self> {
         let raw: RawModel3 = serde_json::from_str(source).map_err(|error| Error::InvalidJson {
             format: FORMAT,
@@ -37,42 +43,52 @@ impl Model3 {
         })
     }
 
+    /// Returns the supported Cubism model version.
     pub fn version(&self) -> u32 {
         self.version
     }
 
+    /// Returns the referenced `.moc3` path relative to the model file.
     pub fn moc(&self) -> &str {
         &self.file_references.moc
     }
 
+    /// Returns texture paths relative to the model file.
     pub fn textures(&self) -> &[String] {
         &self.file_references.textures
     }
 
+    /// Returns the optional `physics3.json` path.
     pub fn physics(&self) -> Option<&str> {
         self.file_references.physics.as_deref()
     }
 
+    /// Returns the optional `pose3.json` path.
     pub fn pose(&self) -> Option<&str> {
         self.file_references.pose.as_deref()
     }
 
+    /// Returns the optional `cdi3.json` path.
     pub fn display_info(&self) -> Option<&str> {
         self.file_references.display_info.as_deref()
     }
 
+    /// Returns motion groups keyed by their Cubism group name.
     pub fn motions(&self) -> &BTreeMap<String, Vec<MotionReference>> {
         &self.file_references.motions
     }
 
+    /// Returns expression references declared by the model.
     pub fn expressions(&self) -> &[ExpressionReference] {
         &self.file_references.expressions
     }
 
+    /// Returns parameter and part groups declared by the model.
     pub fn groups(&self) -> &[Group] {
         &self.groups
     }
 
+    /// Returns named hit areas declared by the model.
     pub fn hit_areas(&self) -> &[HitArea] {
         &self.hit_areas
     }
@@ -109,18 +125,21 @@ struct FileReferences {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+/// Reference to a motion file from `model3.json`.
 pub struct MotionReference {
     #[serde(rename = "File")]
     file: String,
 }
 
 impl MotionReference {
+    /// Returns the motion file path relative to the model file.
     pub fn file(&self) -> &str {
         &self.file
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+/// Reference to an expression file from `model3.json`.
 pub struct ExpressionReference {
     #[serde(rename = "Name")]
     name: String,
@@ -129,16 +148,19 @@ pub struct ExpressionReference {
 }
 
 impl ExpressionReference {
+    /// Returns the display name for this expression.
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// Returns the expression file path relative to the model file.
     pub fn file(&self) -> &str {
         &self.file
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+/// A named group of parameter or part ids.
 pub struct Group {
     #[serde(rename = "Target")]
     target: String,
@@ -149,20 +171,24 @@ pub struct Group {
 }
 
 impl Group {
+    /// Returns the group target, such as `Parameter` or `PartOpacity`.
     pub fn target(&self) -> &str {
         &self.target
     }
 
+    /// Returns the Cubism group name.
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// Returns ids that belong to this group.
     pub fn ids(&self) -> &[String] {
         &self.ids
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+/// A named hit area declared by the model.
 pub struct HitArea {
     #[serde(rename = "Id")]
     id: String,
@@ -171,10 +197,12 @@ pub struct HitArea {
 }
 
 impl HitArea {
+    /// Returns the drawable or part id used for hit testing.
     pub fn id(&self) -> &str {
         &self.id
     }
 
+    /// Returns the user-facing hit area name.
     pub fn name(&self) -> &str {
         &self.name
     }

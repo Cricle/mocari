@@ -1,3 +1,10 @@
+//! `wgpu` renderer backend.
+//!
+//! This module is available with the `wgpu` crate feature. It re-exports the
+//! backend-neutral render helpers with `Wgpu` names and provides buffers,
+//! textures, pipelines, clipping resources, and [`WgpuLive2dRenderer`] for
+//! drawing [`crate::runtime::ModelRuntime`] meshes.
+
 mod buffers;
 mod clipping;
 mod draw;

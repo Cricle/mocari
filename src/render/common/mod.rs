@@ -1,3 +1,9 @@
+//! Backend-neutral rendering helpers.
+//!
+//! This module converts runtime drawable meshes into renderer-friendly data:
+//! sorted draw indices, packed vertices, packed indices, and clipping-mask plans.
+//! Use it when writing your own renderer instead of the built-in `wgpu` backend.
+
 mod clipping;
 mod vertex;
 

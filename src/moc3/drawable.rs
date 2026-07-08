@@ -7,26 +7,34 @@ const DRAWABLE_BLEND_MULTIPLICATIVE: u8 = 1 << 1;
 const DRAWABLE_MASK_INVERTED: u8 = 1 << 3;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
+/// One vertex in a generated drawable mesh.
 pub struct Moc3DrawableVertex {
     position: [f32; 2],
     uv: [f32; 2],
 }
 
 impl Moc3DrawableVertex {
+    /// Creates a drawable vertex from model-space position and UV coordinates.
     pub fn new(position: [f32; 2], uv: [f32; 2]) -> Self {
         Self { position, uv }
     }
 
+    /// Returns the model-space position.
     pub fn position(&self) -> [f32; 2] {
         self.position
     }
 
+    /// Returns the texture coordinate.
     pub fn uv(&self) -> [f32; 2] {
         self.uv
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/// A drawable mesh generated from MOC3 art mesh data.
+///
+/// Renderers draw these meshes with the texture, opacity, blend mode, mask
+/// information, and colors carried by the mesh.
 pub struct Moc3DrawableMesh {
     texture_index: i32,
     drawable_flags: u8,
@@ -41,13 +49,18 @@ pub struct Moc3DrawableMesh {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+/// Blend mode for a drawable mesh.
 pub enum Moc3DrawableBlendMode {
+    /// Standard alpha blending.
     Normal,
+    /// Additive blending.
     Additive,
+    /// Multiplicative blending.
     Multiplicative,
 }
 
 impl Moc3DrawableBlendMode {
+    /// Decodes a blend mode from raw drawable flags.
     pub fn from_flags(flags: u8) -> Self {
         if flags & DRAWABLE_BLEND_ADDITIVE != 0 {
             Self::Additive
@@ -60,6 +73,7 @@ impl Moc3DrawableBlendMode {
 }
 
 impl Moc3DrawableMesh {
+    /// Creates a drawable mesh from raw parts.
     pub fn from_parts(
         texture_index: i32,
         drawable_flags: u8,
@@ -82,6 +96,7 @@ impl Moc3DrawableMesh {
     }
 
     #[allow(clippy::too_many_arguments)]
+    /// Creates a drawable mesh from raw parts with an explicit render order.
     pub fn from_parts_with_render_order(
         texture_index: i32,
         drawable_flags: u8,
@@ -106,14 +121,17 @@ impl Moc3DrawableMesh {
         }
     }
 
+    /// Returns the texture index used by this drawable.
     pub fn texture_index(&self) -> i32 {
         self.texture_index
     }
 
+    /// Returns the multiply color applied to this drawable.
     pub fn multiply_color(&self) -> [f32; 3] {
         self.multiply_color
     }
 
+    /// Returns the screen color applied to this drawable.
     pub fn screen_color(&self) -> [f32; 3] {
         self.screen_color
     }
@@ -126,18 +144,22 @@ impl Moc3DrawableMesh {
         self.screen_color = color;
     }
 
+    /// Returns the raw drawable flags from the model.
     pub fn drawable_flags(&self) -> u8 {
         self.drawable_flags
     }
 
+    /// Returns the decoded blend mode.
     pub fn blend_mode(&self) -> Moc3DrawableBlendMode {
         Moc3DrawableBlendMode::from_flags(self.drawable_flags)
     }
 
+    /// Returns whether this drawable uses inverted mask semantics.
     pub fn is_inverted_mask(&self) -> bool {
         self.drawable_flags & DRAWABLE_MASK_INVERTED != 0
     }
 
+    /// Returns the drawable opacity.
     pub fn opacity(&self) -> f32 {
         self.opacity
     }
@@ -146,6 +168,7 @@ impl Moc3DrawableMesh {
         self.opacity = opacity;
     }
 
+    /// Returns the raw draw order value.
     pub fn draw_order(&self) -> f32 {
         self.draw_order
     }
@@ -154,6 +177,7 @@ impl Moc3DrawableMesh {
         self.draw_order = draw_order;
     }
 
+    /// Returns the resolved render order value.
     pub fn render_order(&self) -> i32 {
         self.render_order
     }
@@ -162,6 +186,7 @@ impl Moc3DrawableMesh {
         self.render_order = render_order;
     }
 
+    /// Returns mesh vertices in model coordinates.
     pub fn vertices(&self) -> &[Moc3DrawableVertex] {
         &self.vertices
     }
@@ -170,15 +195,18 @@ impl Moc3DrawableMesh {
         &mut self.vertices
     }
 
+    /// Returns triangle indices into [`vertices`](Self::vertices).
     pub fn indices(&self) -> &[u16] {
         &self.indices
     }
 
+    /// Returns drawable indices used as masks for this drawable.
     pub fn masks(&self) -> &[i32] {
         &self.masks
     }
 }
 
+/// Builds one drawable mesh for an art mesh keyform.
 pub fn build_moc3_drawable_mesh(
     art_meshes: &Moc3ArtMeshes,
     keyforms: &Moc3ArtMeshKeyforms,
@@ -222,6 +250,7 @@ pub fn build_moc3_drawable_mesh(
     ))
 }
 
+/// Builds drawable meshes for all art meshes using their first keyform.
 pub fn build_moc3_drawable_meshes(
     art_meshes: &Moc3ArtMeshes,
     keyforms: &Moc3ArtMeshKeyforms,

@@ -1,3 +1,10 @@
+//! Parsers and typed representations for Cubism JSON files.
+//!
+//! This module covers the sidecar files referenced by a `.model3.json` model:
+//! motions, expressions, physics, pose data, and display metadata. The high-level
+//! loaders in [`crate::assets`] use these parsers automatically, but custom asset
+//! pipelines can call them directly.
+
 mod cdi3;
 mod expression3;
 mod model3;
