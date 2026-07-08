@@ -266,6 +266,16 @@ impl WgpuMeshBuffers {
         self.drawables.iter().map(|d| d.info.clone()).collect()
     }
 
+    pub(crate) fn iter_drawable_infos(&self) -> impl Iterator<Item = &DrawableInfo> {
+        self.drawables.iter().map(WgpuDrawableBuffers::info)
+    }
+
+    pub(crate) fn drawable_bounds(&self, drawable_index: usize) -> Option<ClippingRect> {
+        self.drawables
+            .get(drawable_index)
+            .and_then(WgpuDrawableBuffers::bounds)
+    }
+
     pub fn draw_order_indices(&self) -> &[usize] {
         &self.draw_order_indices
     }

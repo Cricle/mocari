@@ -401,11 +401,11 @@ pub struct ClippingPlan {
 
 impl ClippingPlan {
     /// Groups visible drawables by mask set.
-    pub fn from_drawables(drawables: &[DrawableInfo]) -> Self {
+    pub fn from_drawables<'a>(drawables: impl IntoIterator<Item = &'a DrawableInfo>) -> Self {
         let mut contexts = Vec::<ClippingContext>::new();
         let mut unmasked_drawable_indices = Vec::new();
 
-        for (drawable_index, drawable) in drawables.iter().enumerate() {
+        for (drawable_index, drawable) in drawables.into_iter().enumerate() {
             if !drawable.is_visible() {
                 continue;
             }
@@ -485,15 +485,24 @@ impl ClippingPlan {
         &mut self,
         drawables: &[DrawableInfo],
     ) -> Result<(), ClippingLayoutError> {
+        self.prepare_single_texture_masks_from_bounds(|drawable_index| {
+            drawables.get(drawable_index).and_then(DrawableInfo::bounds)
+        })
+    }
+
+    pub(crate) fn prepare_single_texture_masks_from_bounds(
+        &mut self,
+        mut drawable_bounds: impl FnMut(usize) -> Option<ClippingRect>,
+    ) -> Result<(), ClippingLayoutError> {
         self.assign_single_texture_layouts()?;
 
         for context_index in 0..self.contexts.len() {
             let layout = self.contexts[context_index]
                 .layout
                 .ok_or(ClippingLayoutError::MissingLayout { context_index })?;
-            let bounds = clipped_draw_total_bounds(
-                drawables,
+            let bounds = clipped_draw_total_bounds_from(
                 self.contexts[context_index].drawable_indices(),
+                &mut drawable_bounds,
             )?
             .ok_or(ClippingLayoutError::DegenerateClippedBounds { context_index })?
             .expanded(0.05);
@@ -539,17 +548,14 @@ fn clipping_layout_bounds(layout_index: usize, layout_count: usize) -> ClippingR
     }
 }
 
-fn clipped_draw_total_bounds(
-    drawables: &[DrawableInfo],
+fn clipped_draw_total_bounds_from(
     drawable_indices: &[usize],
+    drawable_bounds: &mut impl FnMut(usize) -> Option<ClippingRect>,
 ) -> Result<Option<ClippingRect>, ClippingLayoutError> {
     let mut bounds: Option<ClippingRect> = None;
 
     for &drawable_index in drawable_indices {
-        let drawable_bounds = drawables
-            .get(drawable_index)
-            .ok_or(ClippingLayoutError::MissingDrawableBounds { drawable_index })?
-            .bounds()
+        let drawable_bounds = drawable_bounds(drawable_index)
             .ok_or(ClippingLayoutError::MissingDrawableBounds { drawable_index })?;
 
         bounds = Some(match bounds {

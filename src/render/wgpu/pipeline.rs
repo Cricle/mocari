@@ -44,6 +44,22 @@ pub fn preferred_surface_format(formats: &[wgpu::TextureFormat]) -> Option<wgpu:
     formats.first().copied()
 }
 
+fn mask_drawable_indices_match(
+    indices: &[usize],
+    masks: &[i32],
+) -> Result<bool, WgpuClippingLayoutError> {
+    let mut matches = indices.len() == masks.len();
+
+    // Validate every mask index even when the first mismatch is enough to rebuild resources.
+    for (position, &drawable_index) in masks.iter().enumerate() {
+        let drawable_index = usize::try_from(drawable_index)
+            .map_err(|_| WgpuClippingLayoutError::InvalidMaskDrawableIndex { drawable_index })?;
+        matches &= indices.get(position).copied() == Some(drawable_index);
+    }
+
+    Ok(matches)
+}
+
 pub fn live2d_blend_state(blend_mode: Moc3DrawableBlendMode) -> wgpu::BlendState {
     match blend_mode {
         Moc3DrawableBlendMode::Normal => blend_state(
@@ -446,16 +462,7 @@ impl WgpuLive2dRenderer {
             .zip(plan.contexts())
             .enumerate()
         {
-            let mask_drawable_indices = context
-                .masks()
-                .iter()
-                .map(|&drawable_index| {
-                    usize::try_from(drawable_index).map_err(|_| {
-                        WgpuClippingLayoutError::InvalidMaskDrawableIndex { drawable_index }
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            if resource.mask_drawable_indices != mask_drawable_indices
+            if !mask_drawable_indices_match(&resource.mask_drawable_indices, context.masks())?
                 || resource.drawable_indices != context.drawable_indices()
             {
                 return Ok(false);

@@ -13,7 +13,7 @@ pub struct WgpuClippingPlan {
 impl WgpuClippingPlan {
     pub fn from_mesh_buffers(mesh_buffers: &WgpuMeshBuffers) -> Self {
         Self {
-            inner: ClippingPlan::from_drawables(&mesh_buffers.drawable_infos()),
+            inner: ClippingPlan::from_drawables(mesh_buffers.iter_drawable_infos()),
         }
     }
 
@@ -34,7 +34,9 @@ impl WgpuClippingPlan {
         mesh_buffers: &WgpuMeshBuffers,
     ) -> Result<(), ClippingLayoutError> {
         self.inner
-            .prepare_single_texture_masks(&mesh_buffers.drawable_infos())
+            .prepare_single_texture_masks_from_bounds(|drawable_index| {
+                mesh_buffers.drawable_bounds(drawable_index)
+            })
     }
 }
 
