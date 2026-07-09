@@ -577,7 +577,7 @@ impl WindowState {
             return Ok(());
         };
         let motion = load_motion(motion_path)?;
-        self.model.player = Some(MotionPlayer::new(motion));
+        self.model.player = Some(MotionPlayer::new_once(motion));
         self.model.dirty = true;
         self.reset_fps_label()?;
         self.last_frame = Instant::now();

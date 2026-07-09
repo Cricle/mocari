@@ -27,16 +27,31 @@ pub struct MotionPlayer {
     motion: Motion3,
     time: f32,
     weight: f32,
+    looping: bool,
     finished: bool,
 }
 
 impl MotionPlayer {
     /// Creates a player at time `0.0` with full weight.
+    ///
+    /// The player follows the motion's own `Loop` metadata.
     pub fn new(motion: Motion3) -> Self {
+        let looping = motion.meta().is_looping();
+        Self::with_looping(motion, looping)
+    }
+
+    /// Creates a player that stops at the end, ignoring the motion's `Loop` metadata.
+    pub fn new_once(motion: Motion3) -> Self {
+        Self::with_looping(motion, false)
+    }
+
+    /// Creates a player with an explicit loop mode.
+    pub fn with_looping(motion: Motion3, looping: bool) -> Self {
         Self {
             motion,
             time: 0.0,
             weight: 1.0,
+            looping,
             finished: false,
         }
     }
@@ -56,12 +71,17 @@ impl MotionPlayer {
         self.weight
     }
 
+    /// Returns whether this player wraps at the motion duration.
+    pub fn is_looping(&self) -> bool {
+        self.looping
+    }
+
     /// Sets the player's global blend weight, clamped to `0.0..=1.0`.
     pub fn set_weight(&mut self, weight: f32) {
         self.weight = weight.clamp(0.0, 1.0);
     }
 
-    /// Returns whether a non-looping motion has reached its end.
+    /// Returns whether a one-shot motion has reached its end.
     pub fn is_finished(&self) -> bool {
         self.finished
     }
@@ -87,7 +107,7 @@ impl MotionPlayer {
             return;
         }
 
-        if self.motion.meta().is_looping() {
+        if self.looping {
             self.time %= duration;
         } else if self.time >= duration {
             self.time = duration;
@@ -102,11 +122,7 @@ impl MotionPlayer {
     /// have been applied for the frame.
     pub fn apply(&self, runtime: &mut ModelRuntime) {
         let duration = self.motion.meta().duration();
-        let end_time = if self.motion.meta().is_looping() {
-            -1.0
-        } else {
-            duration
-        };
+        let end_time = if self.looping { -1.0 } else { duration };
         let fade_in = motion_fade_in_weight(self.time, 0.0, 0.0);
         let fade_out = motion_fade_out_weight(self.time, end_time, 0.0);
 

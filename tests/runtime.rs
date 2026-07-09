@@ -301,6 +301,27 @@ fn looping_motion_wraps_time() {
     assert!((player.time() - 0.5).abs() < 0.0001);
 }
 
+#[test]
+fn one_shot_player_finishes_looping_motion() {
+    let motion = Motion3::from_json_str(
+        r#"{
+            "Version": 3,
+            "Meta": { "Duration": 1.0, "Fps": 30.0, "Loop": true },
+            "Curves": [
+                { "Target": "Parameter", "Id": "ParamAngleX", "Segments": [0.0, 0.0, 0, 1.0, 10.0] }
+            ]
+        }"#,
+    )
+    .unwrap();
+
+    let mut player = MotionPlayer::new_once(motion);
+
+    assert!(!player.is_looping());
+    player.tick(1.5);
+    assert!(player.is_finished());
+    assert_eq!(player.time(), 1.0);
+}
+
 fn hiyori_mesh_snapshot(model: &mocari::assets::RuntimeModel) -> Vec<Vec<[f32; 2]>> {
     model
         .runtime()
