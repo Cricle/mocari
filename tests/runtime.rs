@@ -52,6 +52,29 @@ fn setting_a_parameter_changes_mesh_vertices() {
 }
 
 #[test]
+fn runtime_hit_tests_model3_hit_areas() {
+    let model = load_model_runtime("assets/models/Mao/Mao.model3.json").unwrap();
+    let runtime = model.runtime();
+    let body = runtime
+        .model()
+        .hit_areas()
+        .iter()
+        .find(|hit_area| hit_area.name() == "Body")
+        .expect("Mao declares Body hit area");
+    let drawable_index = runtime
+        .drawable_index(body.id())
+        .expect("hit area id references a drawable");
+    let (x, y) = drawable_center(&runtime.meshes()[drawable_index]);
+
+    let hit = runtime.hit_test(x, y).expect("body center should hit");
+
+    assert_eq!(hit.id(), body.id());
+    assert_eq!(hit.name(), "Body");
+    assert_eq!(hit.drawable_index(), drawable_index);
+    assert!(runtime.hit_test(10_000.0, 10_000.0).is_none());
+}
+
+#[test]
 fn updating_parameters_reuses_runtime_mesh_storage() {
     let mut model = load_model_runtime("assets/models/Haru/Haru.model3.json").unwrap();
     let mesh_ptr = model.runtime().meshes().as_ptr();
@@ -75,6 +98,23 @@ fn updating_parameters_reuses_runtime_mesh_storage() {
             .collect::<Vec<_>>(),
         vertex_ptrs
     );
+}
+
+fn drawable_center(mesh: &mocari::moc3::Moc3DrawableMesh) -> (f32, f32) {
+    let first = mesh.vertices().first().expect("hit drawable has vertices");
+    let [mut min_x, mut min_y] = first.position();
+    let mut max_x = min_x;
+    let mut max_y = min_y;
+
+    for vertex in mesh.vertices().iter().skip(1) {
+        let [x, y] = vertex.position();
+        min_x = min_x.min(x);
+        min_y = min_y.min(y);
+        max_x = max_x.max(x);
+        max_y = max_y.max(y);
+    }
+
+    ((min_x + max_x) * 0.5, (min_y + max_y) * 0.5)
 }
 
 #[test]

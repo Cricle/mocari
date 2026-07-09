@@ -74,6 +74,35 @@ impl<'a> ParameterInfo<'a> {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+/// A hit area that contains a tested model-space point.
+///
+/// Hit areas come from `HitAreas` in `.model3.json`. Their ids reference
+/// drawable ids in the loaded `.moc3` file, and their names are the user-facing
+/// labels commonly used to choose tap motions such as `TapBody`.
+pub struct HitAreaInfo<'a> {
+    id: &'a str,
+    name: &'a str,
+    drawable_index: usize,
+}
+
+impl<'a> HitAreaInfo<'a> {
+    /// Returns the hit area's drawable id.
+    pub fn id(&self) -> &'a str {
+        self.id
+    }
+
+    /// Returns the user-facing hit area name, such as `Head` or `Body`.
+    pub fn name(&self) -> &'a str {
+        self.name
+    }
+
+    /// Returns the model-order drawable index used for hit testing.
+    pub fn drawable_index(&self) -> usize {
+        self.drawable_index
+    }
+}
+
 #[derive(Debug, Clone)]
 /// Runtime state for a loaded Live2D/Cubism-compatible model.
 ///
@@ -95,6 +124,7 @@ pub struct ModelRuntime {
     glues: Moc3Glues,
     parts: Moc3Parts,
     draw_order_groups: Option<Moc3DrawOrderGroups>,
+    drawable_index: HashMap<String, usize>,
     parameter_index: HashMap<String, usize>,
     parameter_values: Vec<f32>,
     parameter_overrides: Vec<Option<f32>>,
@@ -130,6 +160,7 @@ impl ModelRuntime {
     ) -> Option<Self> {
         let parameter_values = bindings.parameter_default_values().to_vec();
         let parameter_overrides = vec![None; parameter_values.len()];
+        let drawable_index = build_index(ids.art_meshes());
         let parameter_index = build_index(ids.parameters());
         let part_index = build_index(ids.parts());
         let part_count = parts.part_count();
@@ -156,6 +187,7 @@ impl ModelRuntime {
             glues,
             parts,
             draw_order_groups,
+            drawable_index,
             parameter_index,
             parameter_values,
             parameter_overrides,
@@ -185,6 +217,16 @@ impl ModelRuntime {
     /// Returns all parameter ids in model order.
     pub fn parameter_ids(&self) -> &[String] {
         self.ids.parameters()
+    }
+
+    /// Returns all drawable ids in model order.
+    pub fn drawable_ids(&self) -> &[String] {
+        self.ids.art_meshes()
+    }
+
+    /// Returns the model-order drawable index for a drawable id.
+    pub fn drawable_index(&self, id: &str) -> Option<usize> {
+        self.drawable_index.get(id).copied()
     }
 
     /// Returns the model-order index for a parameter id.
@@ -401,6 +443,27 @@ impl ModelRuntime {
         Some(raw_parameter_value_from_normalized_range(
             minimum, maximum, value,
         ))
+    }
+
+    /// Returns the first hit area containing a model-space point.
+    ///
+    /// Coordinates must be in the same model space as drawable vertices. UI code
+    /// that starts from window pixels should first invert its render transform.
+    pub fn hit_test(&self, x: f32, y: f32) -> Option<HitAreaInfo<'_>> {
+        self.hit_test_all(x, y).next()
+    }
+
+    /// Returns all hit areas containing a model-space point.
+    pub fn hit_test_all(&self, x: f32, y: f32) -> impl Iterator<Item = HitAreaInfo<'_>> + '_ {
+        self.model.hit_areas().iter().filter_map(move |hit_area| {
+            let drawable_index = self.drawable_index(hit_area.id())?;
+            let mesh = self.meshes.get(drawable_index)?;
+            drawable_contains_point(mesh, x, y).then_some(HitAreaInfo {
+                id: hit_area.id(),
+                name: hit_area.name(),
+                drawable_index,
+            })
+        })
     }
 
     /// Resets current parameter values to the defaults declared by the model.
@@ -667,6 +730,28 @@ fn build_index(ids: &[String]) -> HashMap<String, usize> {
         .enumerate()
         .map(|(index, id)| (id.clone(), index))
         .collect()
+}
+
+fn drawable_contains_point(mesh: &Moc3DrawableMesh, x: f32, y: f32) -> bool {
+    let Some(first) = mesh.vertices().first() else {
+        return false;
+    };
+
+    let [first_x, first_y] = first.position();
+    let mut min_x = first_x;
+    let mut min_y = first_y;
+    let mut max_x = first_x;
+    let mut max_y = first_y;
+
+    for vertex in mesh.vertices().iter().skip(1) {
+        let [vertex_x, vertex_y] = vertex.position();
+        min_x = min_x.min(vertex_x);
+        min_y = min_y.min(vertex_y);
+        max_x = max_x.max(vertex_x);
+        max_y = max_y.max(vertex_y);
+    }
+
+    (min_x..=max_x).contains(&x) && (min_y..=max_y).contains(&y)
 }
 
 fn build_pose_groups(pose: &Pose3, part_index: &HashMap<String, usize>) -> Vec<PoseGroup> {

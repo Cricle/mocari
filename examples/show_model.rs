@@ -1,4 +1,4 @@
-use std::{error::Error, fmt, path::PathBuf, sync::Arc, time::Instant};
+use std::{collections::BTreeMap, error::Error, fmt, path::PathBuf, sync::Arc, time::Instant};
 
 use ab_glyph::{Font, FontArc, Glyph, ScaleFont, point};
 use mocari::{
@@ -285,6 +285,7 @@ struct WindowState {
 struct LoadedModel {
     runtime: ModelRuntime,
     motions: Vec<PathBuf>,
+    motion_groups: BTreeMap<String, Vec<PathBuf>>,
     expressions: Vec<PathBuf>,
     player: Option<MotionPlayer>,
     expression_manager: ExpressionManager,
@@ -525,8 +526,26 @@ impl WindowState {
             }
             Ok(())
         } else {
-            Ok(())
+            self.handle_model_tap()
         }
+    }
+
+    fn handle_model_tap(&mut self) -> Result<(), Box<dyn Error>> {
+        let Some(position) = self.cursor_position else {
+            return Ok(());
+        };
+        let Some((model_x, model_y)) = cursor_to_model_position(
+            position,
+            self.window.inner_size(),
+            fit_model_matrix(self.model.model_bounds, self.window.inner_size()),
+        ) else {
+            return Ok(());
+        };
+        let Some(hit_area) = self.model.runtime.hit_test(model_x, model_y) else {
+            return Ok(());
+        };
+        let motion_group = format!("Tap{}", hit_area.name());
+        self.play_random_motion_group(&motion_group)
     }
 
     fn play_random_motion(&mut self) -> Result<(), Box<dyn Error>> {
@@ -535,6 +554,29 @@ impl WindowState {
         }
         let pick = (self.next_rng() % self.model.motions.len() as u64) as usize;
         let motion = load_motion(&self.model.motions[pick])?;
+        self.model.player = Some(MotionPlayer::new(motion));
+        self.model.dirty = true;
+        self.reset_fps_label()?;
+        self.last_frame = Instant::now();
+        self.window.request_redraw();
+        Ok(())
+    }
+
+    fn play_random_motion_group(&mut self, group: &str) -> Result<(), Box<dyn Error>> {
+        let motion_count = match self.model.motion_groups.get(group) {
+            Some(motions) if !motions.is_empty() => motions.len(),
+            _ => return Ok(()),
+        };
+        let pick = (self.next_rng() % motion_count as u64) as usize;
+        let Some(motion_path) = self
+            .model
+            .motion_groups
+            .get(group)
+            .and_then(|motions| motions.get(pick))
+        else {
+            return Ok(());
+        };
+        let motion = load_motion(motion_path)?;
         self.model.player = Some(MotionPlayer::new(motion));
         self.model.dirty = true;
         self.reset_fps_label()?;
@@ -929,12 +971,14 @@ fn load_rendered_model(
     let model_bounds = ModelBounds::from_drawables(runtime.meshes())
         .ok_or(ExampleError("model has no drawable bounds"))?;
     let textures = create_textures(renderer, device, queue, loaded.textures())?;
-    let motions = motion_paths(&runtime, loaded.model_dir());
+    let motion_groups = motion_paths_by_group(&runtime, loaded.model_dir());
+    let motions = motion_groups.values().flatten().cloned().collect();
     let expressions = expression_paths(&runtime, loaded.model_dir());
 
     let mut model = LoadedModel {
         runtime,
         motions,
+        motion_groups,
         expressions,
         player: None,
         expression_manager: ExpressionManager::new(),
@@ -1050,16 +1094,26 @@ fn update_model_clipping(
     Ok(())
 }
 
-fn motion_paths(runtime: &ModelRuntime, model_dir: Option<&std::path::Path>) -> Vec<PathBuf> {
+fn motion_paths_by_group(
+    runtime: &ModelRuntime,
+    model_dir: Option<&std::path::Path>,
+) -> BTreeMap<String, Vec<PathBuf>> {
     let Some(model_dir) = model_dir else {
-        return Vec::new();
+        return BTreeMap::new();
     };
     runtime
         .model()
         .motions()
-        .values()
-        .flatten()
-        .map(|reference| model_dir.join(reference.file()))
+        .iter()
+        .map(|(group, references)| {
+            (
+                group.clone(),
+                references
+                    .iter()
+                    .map(|reference| model_dir.join(reference.file()))
+                    .collect(),
+            )
+        })
         .collect()
 }
 
@@ -1503,6 +1557,23 @@ fn fit_model_matrix(bounds: ModelBounds, surface_size: PhysicalSize<u32>) -> Mat
     matrix
 }
 
+fn cursor_to_model_position(
+    position: PhysicalPosition<f64>,
+    surface_size: PhysicalSize<u32>,
+    transform: Matrix44,
+) -> Option<(f32, f32)> {
+    if surface_size.width == 0 || surface_size.height == 0 {
+        return None;
+    }
+
+    let clip_x = (position.x as f32 / surface_size.width as f32) * 2.0 - 1.0;
+    let clip_y = 1.0 - (position.y as f32 / surface_size.height as f32) * 2.0;
+    Some((
+        transform.invert_transform_x(clip_x),
+        transform.invert_transform_y(clip_y),
+    ))
+}
+
 #[derive(Debug)]
 struct ExampleError(&'static str);
 
@@ -1549,6 +1620,23 @@ mod tests {
         let matrix = fit_model_matrix(bounds, PhysicalSize::new(200, 100));
 
         assert_close(matrix.scale_x() * 200.0, matrix.scale_y() * 100.0);
+    }
+
+    #[test]
+    fn cursor_to_model_position_inverts_fit_matrix() {
+        let bounds = ModelBounds {
+            min_x: -2.0,
+            min_y: -1.0,
+            max_x: 2.0,
+            max_y: 3.0,
+        };
+        let size = PhysicalSize::new(100, 100);
+        let matrix = fit_model_matrix(bounds, size);
+        let center = cursor_to_model_position(PhysicalPosition::new(50.0, 50.0), size, matrix)
+            .expect("valid surface size");
+
+        assert_close(center.0, bounds.center_x());
+        assert_close(center.1, bounds.center_y());
     }
 
     #[test]
