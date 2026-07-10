@@ -22,6 +22,24 @@ fn runtime_default_pose_matches_default_model() {
 }
 
 #[test]
+fn loaded_textures_match_image_crate_rgba_output() {
+    let model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+    let texture_paths = [
+        "assets/models/Hiyori/Hiyori.2048/texture_00.png",
+        "assets/models/Hiyori/Hiyori.2048/texture_01.png",
+    ];
+
+    assert_eq!(model.textures().len(), texture_paths.len());
+    for (texture, path) in model.textures().iter().zip(texture_paths) {
+        let expected = image::open(path).unwrap().to_rgba8();
+
+        assert_eq!(texture.width(), expected.width());
+        assert_eq!(texture.height(), expected.height());
+        assert_eq!(texture.rgba(), expected.as_raw());
+    }
+}
+
+#[test]
 fn setting_a_parameter_changes_mesh_vertices() {
     let mut model = load_model_runtime("assets/models/Haru/Haru.model3.json").unwrap();
     let before: Vec<_> = model

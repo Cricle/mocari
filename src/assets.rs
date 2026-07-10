@@ -8,6 +8,7 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    thread,
 };
 
 use crate::{
@@ -285,11 +286,7 @@ fn parse_model(path: impl AsRef<Path>) -> Result<ParsedModel, AssetLoadError> {
         }
         None => None,
     };
-    let textures = model
-        .textures()
-        .iter()
-        .map(|texture| decode_texture(model_dir.join(texture)))
-        .collect::<Result<Vec<_>, _>>()?;
+    let textures = decode_textures(model_dir, model.textures())?;
 
     Ok(ParsedModel {
         model,
@@ -319,6 +316,31 @@ fn read_bytes(path: &Path) -> Result<Vec<u8>, AssetLoadError> {
     fs::read(path).map_err(|source| AssetLoadError::Io {
         path: path.display().to_string(),
         source,
+    })
+}
+
+fn decode_textures(
+    model_dir: &Path,
+    textures: &[String],
+) -> Result<Vec<DecodedTexture>, AssetLoadError> {
+    let paths = textures
+        .iter()
+        .map(|texture| model_dir.join(texture))
+        .collect::<Vec<_>>();
+    if paths.len() <= 1 {
+        return paths.into_iter().map(decode_texture).collect();
+    }
+
+    thread::scope(|scope| {
+        let handles = paths
+            .iter()
+            .map(|path| scope.spawn(move || decode_texture(path)))
+            .collect::<Vec<_>>();
+
+        handles
+            .into_iter()
+            .map(|handle| handle.join().expect("texture decode thread panicked"))
+            .collect()
     })
 }
 
