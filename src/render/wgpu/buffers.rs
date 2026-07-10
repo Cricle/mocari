@@ -3,7 +3,7 @@ use wgpu::util::DeviceExt;
 use crate::moc3::{Moc3DrawableBlendMode, Moc3DrawableMesh};
 use crate::render::common::{
     ClippingRect, DrawableInfo, DrawableVertex, draw_order_indices_from, encode_indices,
-    encode_vertices, encode_vertices_from_drawable, vertices_from_drawable,
+    encode_vertices_from_drawable,
 };
 
 pub fn drawable_vertex_layout() -> wgpu::VertexBufferLayout<'static> {
@@ -239,12 +239,14 @@ impl WgpuMeshBuffers {
         let mut bounds_changed = false;
         let mut visibility_changed = false;
         for (drawable, mesh) in self.drawables.iter_mut().zip(meshes) {
-            encode_vertices_from_drawable(mesh, &mut vertex_bytes);
-            if !vertex_bytes.is_empty() && vertex_bytes != drawable.vertex_bytes {
-                queue.write_buffer(&drawable.vertex_buffer, 0, &vertex_bytes);
-                drawable.vertex_bytes.clear();
-                drawable.vertex_bytes.extend_from_slice(&vertex_bytes);
-                uploads += 1;
+            if renderer_vertex_data_changed(drawable, mesh) {
+                encode_vertices_from_drawable(mesh, &mut vertex_bytes);
+                if !vertex_bytes.is_empty() {
+                    queue.write_buffer(&drawable.vertex_buffer, 0, &vertex_bytes);
+                    drawable.vertex_bytes.clear();
+                    drawable.vertex_bytes.extend_from_slice(&vertex_bytes);
+                    uploads += 1;
+                }
             }
             let was_visible = drawable.is_visible();
             let info = DrawableInfo::from_mesh(mesh);
@@ -359,10 +361,10 @@ pub fn create_wgpu_drawable_buffers(
     device: &wgpu::Device,
     mesh: &Moc3DrawableMesh,
 ) -> Option<WgpuDrawableBuffers> {
-    let vertices = vertices_from_drawable(mesh);
-    let vertex_bytes = encode_vertices(&vertices);
+    let mut vertex_bytes = Vec::new();
+    encode_vertices_from_drawable(mesh, &mut vertex_bytes);
     let index_bytes = encode_indices(mesh.indices());
-    let vertex_count = u32::try_from(vertices.len()).ok()?;
+    let vertex_count = u32::try_from(mesh.vertices().len()).ok()?;
     let index_count = u32::try_from(mesh.indices().len()).ok()?;
 
     let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -385,4 +387,43 @@ pub fn create_wgpu_drawable_buffers(
         indices: mesh.indices().to_vec(),
         info: DrawableInfo::from_mesh(mesh),
     })
+}
+
+fn renderer_vertex_data_changed(drawable: &WgpuDrawableBuffers, mesh: &Moc3DrawableMesh) -> bool {
+    if drawable.vertex_count as usize != mesh.vertices().len() {
+        return true;
+    }
+    if drawable.vertex_bytes.len() != mesh.vertices().len() * DrawableVertex::STRIDE {
+        return true;
+    }
+
+    let opacity = mesh.opacity().to_ne_bytes();
+    let multiply = color_bytes(mesh.multiply_color());
+    let screen = color_bytes(mesh.screen_color());
+    drawable
+        .vertex_bytes
+        .chunks_exact(DrawableVertex::STRIDE)
+        .zip(mesh.vertices())
+        .any(|(bytes, vertex)| {
+            bytes[0..8] != vec2_bytes(vertex.position())
+                || bytes[8..16] != vec2_bytes(vertex.uv())
+                || bytes[16..20] != opacity
+                || bytes[20..32] != multiply
+                || bytes[32..44] != screen
+        })
+}
+
+fn vec2_bytes(values: [f32; 2]) -> [u8; 8] {
+    let mut bytes = [0; 8];
+    bytes[0..4].copy_from_slice(&values[0].to_ne_bytes());
+    bytes[4..8].copy_from_slice(&values[1].to_ne_bytes());
+    bytes
+}
+
+fn color_bytes(values: [f32; 3]) -> [u8; 12] {
+    let mut bytes = [0; 12];
+    bytes[0..4].copy_from_slice(&values[0].to_ne_bytes());
+    bytes[4..8].copy_from_slice(&values[1].to_ne_bytes());
+    bytes[8..12].copy_from_slice(&values[2].to_ne_bytes());
+    bytes
 }

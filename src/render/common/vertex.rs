@@ -85,16 +85,21 @@ pub fn vertices_from_drawable(mesh: &Moc3DrawableMesh) -> Vec<DrawableVertex> {
 ///
 /// The output buffer is cleared before new bytes are appended.
 pub fn encode_vertices_from_drawable(mesh: &Moc3DrawableMesh, bytes: &mut Vec<u8>) {
+    let byte_len = mesh.vertices().len() * DrawableVertex::STRIDE;
     bytes.clear();
-    bytes.reserve(mesh.vertices().len() * DrawableVertex::STRIDE);
-    for vertex in mesh.vertices() {
-        encode_vertex(
+    bytes.resize(byte_len, 0);
+
+    let opacity = mesh.opacity();
+    let multiply = mesh.multiply_color();
+    let screen = mesh.screen_color();
+    for (index, vertex) in mesh.vertices().iter().enumerate() {
+        encode_vertex_into(
             vertex.position(),
             vertex.uv(),
-            mesh.opacity(),
-            mesh.multiply_color(),
-            mesh.screen_color(),
-            bytes,
+            opacity,
+            multiply,
+            screen,
+            &mut bytes[index * DrawableVertex::STRIDE..][..DrawableVertex::STRIDE],
         );
     }
 }
@@ -111,48 +116,52 @@ pub fn vertex_from_drawable_vertex(
 
 /// Encodes vertices into native-endian `f32` bytes.
 pub fn encode_vertices(vertices: &[DrawableVertex]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(vertices.len() * DrawableVertex::STRIDE);
-    for vertex in vertices {
-        encode_vertex(
+    let mut bytes = vec![0; vertices.len() * DrawableVertex::STRIDE];
+    for (index, vertex) in vertices.iter().enumerate() {
+        encode_vertex_into(
             vertex.position,
             vertex.uv,
             vertex.opacity,
             vertex.multiply,
             vertex.screen,
-            &mut bytes,
+            &mut bytes[index * DrawableVertex::STRIDE..][..DrawableVertex::STRIDE],
         );
     }
 
     bytes
 }
 
-fn encode_vertex(
+fn encode_vertex_into(
     position: [f32; 2],
     uv: [f32; 2],
     opacity: f32,
     multiply: [f32; 3],
     screen: [f32; 3],
-    bytes: &mut Vec<u8>,
+    bytes: &mut [u8],
 ) {
-    bytes.extend_from_slice(&position[0].to_ne_bytes());
-    bytes.extend_from_slice(&position[1].to_ne_bytes());
-    bytes.extend_from_slice(&uv[0].to_ne_bytes());
-    bytes.extend_from_slice(&uv[1].to_ne_bytes());
-    bytes.extend_from_slice(&opacity.to_ne_bytes());
-    for channel in multiply {
-        bytes.extend_from_slice(&channel.to_ne_bytes());
-    }
-    for channel in screen {
-        bytes.extend_from_slice(&channel.to_ne_bytes());
-    }
+    write_f32(bytes, 0, position[0]);
+    write_f32(bytes, 4, position[1]);
+    write_f32(bytes, 8, uv[0]);
+    write_f32(bytes, 12, uv[1]);
+    write_f32(bytes, 16, opacity);
+    write_f32(bytes, 20, multiply[0]);
+    write_f32(bytes, 24, multiply[1]);
+    write_f32(bytes, 28, multiply[2]);
+    write_f32(bytes, 32, screen[0]);
+    write_f32(bytes, 36, screen[1]);
+    write_f32(bytes, 40, screen[2]);
 }
 
 /// Encodes `u16` mesh indices into native-endian bytes.
 pub fn encode_indices(indices: &[u16]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(indices.len() * 2);
-    for index in indices {
-        bytes.extend_from_slice(&index.to_ne_bytes());
+    let mut bytes = vec![0; indices.len() * 2];
+    for (chunk, index) in bytes.chunks_exact_mut(2).zip(indices) {
+        chunk.copy_from_slice(&index.to_ne_bytes());
     }
 
     bytes
+}
+
+fn write_f32(bytes: &mut [u8], offset: usize, value: f32) {
+    bytes[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
 }

@@ -1,6 +1,7 @@
 use mocari::moc3::{Moc3DrawableMesh, Moc3DrawableVertex};
 use mocari::render::common::{
     ClippingLayoutError, ClippingPlan, ClippingRect, DrawableInfo, MaskChannel, draw_order_indices,
+    encode_indices, encode_vertices, encode_vertices_from_drawable, vertices_from_drawable,
 };
 
 fn infos(meshes: &[Moc3DrawableMesh]) -> Vec<DrawableInfo> {
@@ -208,6 +209,27 @@ fn prepares_clipping_bounds_and_matrices_from_clipped_drawables() {
     assert_f32_close(mask_matrix.transform_x(3.2), 1.0);
     assert_f32_close(mask_matrix.transform_y(-2.3), -1.0);
     assert_f32_close(mask_matrix.transform_y(4.3), 1.0);
+}
+
+#[test]
+fn encode_vertices_from_drawable_matches_converted_vertices() {
+    let mesh = test_mesh_with_opacity(0, 0.0, 0.5, Vec::new());
+    let mut direct = Vec::new();
+
+    encode_vertices_from_drawable(&mesh, &mut direct);
+    let converted = encode_vertices(&vertices_from_drawable(&mesh));
+
+    assert_eq!(direct, converted);
+}
+
+#[test]
+fn encode_indices_writes_native_endian_u16_values() {
+    let encoded = encode_indices(&[0x0102, 0x0304]);
+    let mut expected = Vec::new();
+    expected.extend_from_slice(&0x0102u16.to_ne_bytes());
+    expected.extend_from_slice(&0x0304u16.to_ne_bytes());
+
+    assert_eq!(encoded, expected);
 }
 
 fn test_mesh_with_draw_order(texture_index: u8, draw_order: f32) -> Moc3DrawableMesh {
