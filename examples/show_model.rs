@@ -1616,11 +1616,18 @@ fn textured_quad_mesh(
         return None;
     }
 
-    let right = (x + width).min(f64::from(surface_size.width));
-    let bottom = (y + height).min(f64::from(surface_size.height));
-    if right <= x || bottom <= y {
+    if !x.is_finite()
+        || !y.is_finite()
+        || !width.is_finite()
+        || !height.is_finite()
+        || width <= 0.0
+        || height <= 0.0
+    {
         return None;
     }
+
+    let right = x + width;
+    let bottom = y + height;
 
     let left = pixel_x_to_ndc(x, surface_size.width);
     let right = pixel_x_to_ndc(right, surface_size.width);
@@ -1883,6 +1890,14 @@ mod tests {
         assert!(rect.contains(rect.x + rect.width, rect.y + rect.height));
         assert!(!rect.contains(rect.x + rect.width + 1.0, rect.y));
         assert!(!rect.contains(rect.x, rect.y + rect.height + 1.0));
+    }
+
+    #[test]
+    fn textured_quad_mesh_allows_ui_to_extend_past_a_small_surface() {
+        let mesh = textured_quad_mesh(PhysicalSize::new(100, 100), 16.0, 386.0, 260.0, 18.0)
+            .expect("offscreen UI remains a valid clipped quad");
+
+        assert_eq!(mesh.vertices().len(), 4);
     }
 
     #[test]
