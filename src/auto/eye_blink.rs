@@ -152,7 +152,9 @@ impl EyeBlink {
             }
         } else {
             for &index in &self.config.parameter_indices {
-                let current = runtime.parameter_value_by_index(index).unwrap_or(1.0);
+                let Some(current) = runtime.parameter_value_by_index(index) else {
+                    continue;
+                };
                 let blended = current + (value - current) * weight;
                 runtime.set_parameter_by_index(index, blended);
             }

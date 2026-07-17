@@ -140,6 +140,8 @@ pub struct ModelRuntime {
     drawable_visible: Vec<bool>,
     drawable_multiply_overrides: Vec<Option<[f32; 3]>>,
     drawable_screen_overrides: Vec<Option<[f32; 3]>>,
+    drawable_opacity_overrides: Vec<Option<f32>>,
+    drawable_draw_order_overrides: Vec<Option<f32>>,
     user_data: Option<UserData3>,
 }
 
@@ -209,6 +211,8 @@ impl ModelRuntime {
             drawable_visible: vec![true; drawable_count],
             drawable_multiply_overrides: vec![None; drawable_count],
             drawable_screen_overrides: vec![None; drawable_count],
+            drawable_opacity_overrides: vec![None; drawable_count],
+            drawable_draw_order_overrides: vec![None; drawable_count],
             user_data: None,
         };
         runtime.update_meshes()?;
@@ -698,6 +702,7 @@ impl ModelRuntime {
         self.rebuild_or_update_meshes(&drawable_part_opacities)?;
         self.apply_mesh_post_processing()?;
         self.apply_drawable_color_overrides();
+        self.apply_drawable_motion_overrides();
         self.apply_drawable_visibility();
         Some(())
     }
@@ -745,6 +750,17 @@ impl ModelRuntime {
             }
             if let Some(color) = self.drawable_screen_overrides.get(index).and_then(|c| *c) {
                 mesh.set_screen_color(color);
+            }
+        }
+    }
+
+    fn apply_drawable_motion_overrides(&mut self) {
+        for (index, mesh) in self.meshes.iter_mut().enumerate() {
+            if let Some(opacity) = self.drawable_opacity_overrides.get(index).and_then(|v| *v) {
+                mesh.set_opacity(opacity);
+            }
+            if let Some(draw_order) = self.drawable_draw_order_overrides.get(index).and_then(|v| *v) {
+                mesh.set_draw_order(draw_order);
             }
         }
     }
@@ -882,6 +898,32 @@ impl ModelRuntime {
     pub fn clear_drawable_color_overrides(&mut self) {
         self.drawable_multiply_overrides.fill(None);
         self.drawable_screen_overrides.fill(None);
+    }
+
+    /// Sets a drawable opacity override by index.
+    pub fn set_drawable_opacity_override(&mut self, index: usize, value: f32) -> bool {
+        let Some(slot) = self.drawable_opacity_overrides.get_mut(index) else {
+            return false;
+        };
+        *slot = Some(value.clamp(0.0, 1.0));
+        true
+    }
+
+    /// Sets a drawable draw order override by index.
+    pub fn set_drawable_draw_order_override(&mut self, index: usize, value: f32) -> bool {
+        let Some(slot) = self.drawable_draw_order_overrides.get_mut(index) else {
+            return false;
+        };
+        *slot = Some(value);
+        true
+    }
+
+    /// Clears all drawable motion overrides (opacity, draw order).
+    ///
+    /// Call this at the start of each frame before applying motion players.
+    pub fn clear_drawable_motion_overrides(&mut self) {
+        self.drawable_opacity_overrides.fill(None);
+        self.drawable_draw_order_overrides.fill(None);
     }
 
     /// Returns the current multiply color on a mesh (after update_meshes).

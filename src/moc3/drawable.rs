@@ -7,7 +7,6 @@ const DRAWABLE_BLEND_MULTIPLICATIVE: u8 = 1 << 1;
 const DRAWABLE_MASK_INVERTED: u8 = 1 << 3;
 const DRAWABLE_DOUBLE_SIDED: u8 = 1 << 2;
 
-
 #[derive(Debug, Copy, Clone, PartialEq)]
 /// One vertex in a generated drawable mesh.
 pub struct Moc3DrawableVertex {

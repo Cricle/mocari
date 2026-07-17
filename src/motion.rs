@@ -131,6 +131,10 @@ impl MotionPlayer {
     ///
     /// Call this after `tick()` to process events that fired this frame.
     /// Works correctly with looping motions.
+    ///
+    /// Returns a `Vec` rather than an iterator because the borrow checker
+    /// cannot express the lifetime of `&str` references borrowed through
+    /// `&mut self` when the event cursor is also mutated.
     pub fn drain_events(&mut self) -> Vec<&str> {
         let motion_data = self.motion.user_data();
         let mut events = Vec::new();
@@ -198,16 +202,14 @@ impl MotionPlayer {
                     let Some(drawable_index) = runtime.drawable_index(drawable_id) else {
                         continue;
                     };
-                    let Some(mesh) = runtime.meshes_mut().get_mut(drawable_index) else {
-                        continue;
-                    };
                     match field {
                         "Opacity" => {
-                            let faded = apply_motion_fade(mesh.opacity(), sampled, curve_weight);
-                            mesh.set_opacity(faded);
+                            let current = runtime.meshes().get(drawable_index).map(|m| m.opacity()).unwrap_or(1.0);
+                            let faded = apply_motion_fade(current, sampled, curve_weight);
+                            runtime.set_drawable_opacity_override(drawable_index, faded);
                         }
                         "DrawOrder" => {
-                            mesh.set_draw_order(sampled);
+                            runtime.set_drawable_draw_order_override(drawable_index, sampled);
                         }
                         _ => {} // VertexPosition not yet supported
                     }
@@ -370,6 +372,22 @@ impl MotionManager {
         for managed in &self.players {
             managed.player.apply(runtime);
         }
+    }
+
+    /// Drains events from all active motion players.
+    ///
+    /// Returns event values from all players whose time ranges include events
+    /// since their last tick. Call this after [`tick`](Self::tick).
+    pub fn drain_events(&mut self) -> Vec<String> {
+        self.players
+            .iter_mut()
+            .flat_map(|m| {
+                m.player
+                    .drain_events()
+                    .into_iter()
+                    .map(String::from)
+            })
+            .collect()
     }
 
     /// Stops all motions immediately.

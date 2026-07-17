@@ -230,8 +230,11 @@ impl ExpressionManager {
     /// Applies all active expressions to a runtime.
     ///
     /// The manager combines additive, multiply, and overwrite blends before
-    /// writing parameter values. PartOpacity targets are applied directly from
-    /// each player.
+    /// writing parameter values. PartOpacity targets are applied sequentially
+    /// from each player rather than using the multi-pass blending used for
+    /// regular parameters. This matches how a single expression applies
+    /// PartOpacity and is simpler than a full multi-pass blend, but differs
+    /// from the official SDK which blends all expressions together.
     pub fn apply(&self, runtime: &mut ModelRuntime) {
         // Apply PartOpacity from each player directly
         for player in &self.players {

@@ -891,10 +891,15 @@ fn set_drawable_visible_by_index_works() {
 fn drawable_culling_flag_from_model() {
     let model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
     let runtime = model.runtime();
-    // All drawables should report a culling flag (default false for most models)
+    // All drawables should report a valid culling flag
+    let mut any_double_sided = false;
     for index in 0..runtime.drawable_ids().len() {
-        let _ = runtime.is_drawable_double_sided(index);
+        let double_sided = runtime.is_drawable_double_sided(index);
+        any_double_sided |= double_sided;
     }
+    // At least verify the function returns without panicking for all drawables.
+    // Hiyori may or may not have double-sided drawables.
+    let _ = any_double_sided;
 }
 
 // ── MouseTracker tests ─────────────────────────────────────────────────────
@@ -1009,16 +1014,16 @@ fn motion_drawable_opacity_curve() {
     let initial_opacity = runtime.meshes()[drawable_index].opacity();
     assert!(initial_opacity > 0.0, "initial opacity should be nonzero");
 
-    // Tick to end and apply — the motion writes directly to the mesh.
-    // Note: we do NOT call update_meshes() after apply because that rebuilds
-    // meshes from moc3 data, overwriting the motion-set value.
+    // Tick to end and apply — the motion writes to overrides on the runtime.
+    // Call update_meshes() after apply to verify the override survives the mesh rebuild.
     player.tick(1.0);
     player.apply(runtime);
+    runtime.update_meshes().unwrap();
 
     let applied_opacity = runtime.meshes()[drawable_index].opacity();
     assert!(
         (applied_opacity - 0.0).abs() < 0.01,
-        "drawable opacity should be near 0.0 after motion, got {applied_opacity}"
+        "drawable opacity should be near 0.0 after motion + update_meshes, got {applied_opacity}"
     );
 }
 
@@ -1165,12 +1170,10 @@ fn eye_blink_config_from_model_groups() {
     let runtime = model.runtime();
     let config = runtime.eye_blink_config_from_model();
     // Hiyori has an EyeBlink group with ParamEyeLOpen and ParamEyeROpen
-    if config.parameter_indices.is_empty() {
-        // No EyeBlink group in this model, default config
-        assert_eq!(config.min_interval, 2.5);
-    } else {
-        assert!(!config.parameter_indices.is_empty());
-    }
+    assert!(
+        !config.parameter_indices.is_empty(),
+        "Hiyori should have EyeBlink group parameters"
+    );
 }
 
 #[test]
@@ -1178,11 +1181,10 @@ fn lip_sync_config_from_model_groups() {
     let model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
     let runtime = model.runtime();
     let config = runtime.lip_sync_config_from_model();
-    if config.parameter_indices.is_empty() {
-        assert_eq!(config.smoothing, 0.2);
-    } else {
-        assert!(!config.parameter_indices.is_empty());
-    }
+    assert!(
+        !config.parameter_indices.is_empty(),
+        "Hiyori should have LipSync group parameters"
+    );
 }
 
 #[test]
