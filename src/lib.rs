@@ -57,8 +57,10 @@ pub mod auto;
 /// Mutable model state used for parameter edits, pose updates, and mesh output.
 pub mod runtime;
 
+pub use crate::auto::{Breath, BreathConfig, EyeBlink, EyeBlinkConfig, LipSync, LipSyncConfig, MouseTracker, MouseTrackerConfig};
 pub use crate::core::{DrawableId, Id, ParameterId, PartId};
 pub use crate::error::{Error, Result};
 pub use crate::expression::{ExpressionManager, ExpressionPlayer};
+pub use crate::json::UserData3;
 pub use crate::motion::{MotionManager, MotionPlayer, MotionPriority};
 pub use crate::runtime::{HitAreaInfo, ModelRuntime, ParameterInfo};
