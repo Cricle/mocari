@@ -716,7 +716,7 @@ fn motion_manager_plays_single_motion() {
 
 #[test]
 fn motion_manager_crossfades_same_group() {
-    let mut model = load_model_runtime("assets/models/Haru/Haru.model3.json").unwrap();
+    let _model = load_model_runtime("assets/models/Haru/Haru.model3.json").unwrap();
     let motion1 = mocari::motion::load_motion("assets/models/Haru/motions/haru_g_idle.motion3.json").unwrap();
     let motion2 = mocari::motion::load_motion("assets/models/Haru/motions/haru_g_idle.motion3.json").unwrap();
     let mut manager = MotionManager::new();
@@ -733,7 +733,7 @@ fn motion_manager_crossfades_same_group() {
 
 #[test]
 fn motion_manager_force_interrupts_normal() {
-    let mut model = load_model_runtime("assets/models/Haru/Haru.model3.json").unwrap();
+    let _model = load_model_runtime("assets/models/Haru/Haru.model3.json").unwrap();
     let motion1 = mocari::motion::load_motion("assets/models/Haru/motions/haru_g_idle.motion3.json").unwrap();
     let motion2 = mocari::motion::load_motion("assets/models/Haru/motions/haru_g_idle.motion3.json").unwrap();
     let mut manager = MotionManager::new();

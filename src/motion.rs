@@ -165,6 +165,220 @@ impl MotionPlayer {
     }
 }
 
+/// Priority level for motions in a [`MotionManager`].
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum MotionPriority {
+    /// Only plays if no other motions are active.
+    Idle,
+    /// Normal priority. Queues (FIFO) if another normal motion is playing.
+    Normal,
+    /// Immediately starts, crossfading out current motions.
+    Force,
+}
+
+#[derive(Debug, Clone)]
+struct ManagedMotion {
+    player: MotionPlayer,
+    priority: MotionPriority,
+    group: String,
+    fade_in_remaining: f32,
+    fading_out: bool,
+}
+
+/// Priority-based motion queue with crossfade blending.
+///
+/// Manages multiple active [`MotionPlayer`]s with priority levels and
+/// crossfade transitions. Same-group motions replace each other;
+/// different-group motions can play simultaneously.
+///
+/// ```no_run
+/// use mocari::motion::{MotionManager, MotionPriority};
+/// # use mocari::motion::load_motion;
+/// # let motion = load_motion("assets/models/Haru/motions/haru_g_idle.motion3.json").unwrap();
+/// let mut manager = MotionManager::new();
+/// manager.start_motion(motion, MotionPriority::Normal, "Idle");
+/// ```
+#[derive(Debug, Clone)]
+pub struct MotionManager {
+    players: Vec<ManagedMotion>,
+    crossfade_duration: f32,
+    queue: Vec<(Motion3, MotionPriority, String)>,
+}
+
+impl MotionManager {
+    /// Creates an empty motion manager with a 0.5 second crossfade.
+    pub fn new() -> Self {
+        Self {
+            players: Vec::new(),
+            crossfade_duration: 0.5,
+            queue: Vec::new(),
+        }
+    }
+
+    /// Sets the crossfade duration in seconds.
+    pub fn set_crossfade_duration(&mut self, seconds: f32) {
+        self.crossfade_duration = seconds.max(0.0);
+    }
+
+    /// Returns the crossfade duration in seconds.
+    pub fn crossfade_duration(&self) -> f32 {
+        self.crossfade_duration
+    }
+
+    /// Starts a motion with the given priority and group.
+    ///
+    /// Returns the number of active motions after starting.
+    pub fn start_motion(&mut self, motion: Motion3, priority: MotionPriority, group: &str) -> usize {
+        match priority {
+            MotionPriority::Idle => {
+                if self.players.iter().any(|p| !p.fading_out) {
+                    // Other motions are active, idle can't start
+                    return self.players.len();
+                }
+                self.start_motion_internal(motion, priority, group);
+            }
+            MotionPriority::Normal => {
+                // Check if same group is already playing
+                let same_group_index = self.players.iter().position(|p| p.group == group && !p.fading_out);
+                if let Some(index) = same_group_index {
+                    // Crossfade: start fading out old, start new
+                    self.players[index].fading_out = true;
+                    self.players[index].fade_in_remaining = self.crossfade_duration;
+                    self.start_motion_internal(motion, priority, group);
+                } else if self.players.iter().any(|p| p.priority == MotionPriority::Normal && !p.fading_out) {
+                    // Queue if a normal motion is playing
+                    self.queue.push((motion, priority, group.to_owned()));
+                    return self.players.len();
+                } else {
+                    self.start_motion_internal(motion, priority, group);
+                }
+            }
+            MotionPriority::Force => {
+                // Fade out all current motions
+                for player in &mut self.players {
+                    if !player.fading_out {
+                        player.fading_out = true;
+                        player.fade_in_remaining = self.crossfade_duration;
+                    }
+                }
+                self.start_motion_internal(motion, priority, group);
+            }
+        }
+        self.players.len()
+    }
+
+    /// Starts a motion from a file path.
+    pub fn start_motion_from_path(
+        &mut self,
+        path: &str,
+        priority: MotionPriority,
+        group: &str,
+    ) -> Result<usize, MotionLoadError> {
+        let motion = load_motion(path)?;
+        Ok(self.start_motion(motion, priority, group))
+    }
+
+    /// Advances all active motions by `delta_seconds`.
+    pub fn tick(&mut self, delta_seconds: f32) {
+        let dt = delta_seconds.max(0.0);
+        let crossfade = self.crossfade_duration;
+
+        for managed in &mut self.players {
+            managed.player.tick(dt);
+            if managed.fading_out {
+                managed.fade_in_remaining -= dt;
+                let progress = ((crossfade - managed.fade_in_remaining) / crossfade).clamp(0.0, 1.0);
+                managed.player.set_weight(1.0 - progress);
+            } else if managed.fade_in_remaining > 0.0 {
+                managed.fade_in_remaining -= dt;
+                let progress = ((crossfade - managed.fade_in_remaining) / crossfade).clamp(0.0, 1.0);
+                managed.player.set_weight(progress);
+            } else {
+                managed.player.set_weight(1.0);
+            }
+        }
+
+        // Remove finished motions
+        self.players.retain(|m| !m.player.is_finished() && m.fade_in_remaining > -0.1);
+
+        // Remove motions that have fully faded out
+        self.players.retain(|m| {
+            if m.fading_out && m.player.weight() <= 0.01 {
+                false
+            } else {
+                true
+            }
+        });
+
+        // Process queue: start queued motions if slots are available
+        if !self.queue.is_empty() && !self.players.iter().any(|p| p.priority == MotionPriority::Normal && !p.fading_out) {
+            let (motion, priority, group) = self.queue.remove(0);
+            self.start_motion_internal(motion, priority, &group);
+        }
+    }
+
+    /// Applies all active motions to the runtime.
+    pub fn apply(&self, runtime: &mut ModelRuntime) {
+        for managed in &self.players {
+            managed.player.apply(runtime);
+        }
+    }
+
+    /// Stops all motions immediately.
+    pub fn stop_all(&mut self) {
+        self.players.clear();
+        self.queue.clear();
+    }
+
+    /// Stops all motions with a fade-out.
+    pub fn stop_all_with_fade(&mut self, _fade_seconds: f32) {
+        for player in &mut self.players {
+            if !player.fading_out {
+                player.fading_out = true;
+                player.fade_in_remaining = self.crossfade_duration;
+            }
+        }
+        self.queue.clear();
+    }
+
+    /// Returns whether there are no active or queued motions.
+    pub fn is_finished(&self) -> bool {
+        self.players.is_empty() && self.queue.is_empty()
+    }
+
+    /// Returns the number of active motions (including those fading out).
+    pub fn active_count(&self) -> usize {
+        self.players.len()
+    }
+
+    /// Removes all active and queued motions.
+    pub fn clear(&mut self) {
+        self.players.clear();
+        self.queue.clear();
+    }
+
+    fn start_motion_internal(&mut self, motion: Motion3, priority: MotionPriority, group: &str) {
+        let crossfade = self.crossfade_duration;
+        let mut player = MotionPlayer::new(motion);
+        if crossfade > 0.0 {
+            player.set_weight(0.0);
+        }
+        self.players.push(ManagedMotion {
+            player,
+            priority,
+            group: group.to_owned(),
+            fade_in_remaining: crossfade,
+            fading_out: false,
+        });
+    }
+}
+
+impl Default for MotionManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Loads a Cubism `motion3.json` file from disk.
 pub fn load_motion(path: impl AsRef<Path>) -> Result<Motion3, MotionLoadError> {
     let path = path.as_ref();

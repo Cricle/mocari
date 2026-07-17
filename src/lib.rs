@@ -60,5 +60,5 @@ pub mod runtime;
 pub use crate::core::{DrawableId, Id, ParameterId, PartId};
 pub use crate::error::{Error, Result};
 pub use crate::expression::{ExpressionManager, ExpressionPlayer};
-pub use crate::motion::MotionPlayer;
+pub use crate::motion::{MotionManager, MotionPlayer, MotionPriority};
 pub use crate::runtime::{HitAreaInfo, ModelRuntime, ParameterInfo};
