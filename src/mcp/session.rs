@@ -1,7 +1,6 @@
 use std::collections::HashMap;
-use std::fmt;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ModelSession {
     models: HashMap<String, ()>,
     next_id: u64,
