@@ -18,7 +18,6 @@ fn get_number(args: &JsonObject, key: &str) -> Result<f64, rmcp::ErrorData> {
         .ok_or_else(|| rmcp::ErrorData::invalid_params(format!("missing '{key}'"), None))
 }
 
-#[allow(dead_code)] // used by later handler tasks
 fn get_bool(args: &JsonObject, key: &str) -> Result<bool, rmcp::ErrorData> {
     args.get(key)
         .and_then(|v| v.as_bool())
@@ -336,50 +335,205 @@ pub async fn handle_stop_expressions(
 }
 
 pub async fn handle_configure_eye_blink(
-    _session: &Arc<Mutex<ModelSession>>,
-    _args: JsonObject,
+    session: &Arc<Mutex<ModelSession>>,
+    args: JsonObject,
 ) -> ToolResult {
-    tool_error("not yet implemented")
+    let id = get_string(&args, "model_id")?;
+    let enabled = get_bool(&args, "enabled")?;
+    let weight = args.get("weight").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
+    let mut session = session.lock().await;
+    match session.with_model_mut(&id, |m| {
+        if enabled {
+            if m.eye_blink.is_none() {
+                let cfg = m.model.runtime().eye_blink_config_from_model();
+                m.eye_blink = Some(crate::auto::EyeBlink::new(cfg));
+            }
+            if let Some(ref mut eb) = m.eye_blink {
+                eb.set_weight(weight);
+            }
+        } else {
+            m.eye_blink = None;
+        }
+        success(r#"{"success": true}"#)
+    }) {
+        Ok(result) => result,
+        Err(e) => tool_error(e.to_string()),
+    }
 }
 
 pub async fn handle_configure_lip_sync(
-    _session: &Arc<Mutex<ModelSession>>,
-    _args: JsonObject,
+    session: &Arc<Mutex<ModelSession>>,
+    args: JsonObject,
 ) -> ToolResult {
-    tool_error("not yet implemented")
+    let id = get_string(&args, "model_id")?;
+    let amplitude = get_number(&args, "amplitude")? as f32;
+    let weight = args.get("weight").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
+    let mut session = session.lock().await;
+    match session.with_model_mut(&id, |m| {
+        if m.lip_sync.is_none() {
+            let cfg = m.model.runtime().lip_sync_config_from_model();
+            m.lip_sync = Some(crate::auto::LipSync::new(cfg));
+        }
+        if let Some(ref mut ls) = m.lip_sync {
+            ls.set_amplitude(amplitude);
+            ls.set_weight(weight);
+        }
+        success(r#"{"success": true}"#)
+    }) {
+        Ok(result) => result,
+        Err(e) => tool_error(e.to_string()),
+    }
 }
 
 pub async fn handle_configure_breath(
-    _session: &Arc<Mutex<ModelSession>>,
-    _args: JsonObject,
+    session: &Arc<Mutex<ModelSession>>,
+    args: JsonObject,
 ) -> ToolResult {
-    tool_error("not yet implemented")
+    let id = get_string(&args, "model_id")?;
+    let enabled = get_bool(&args, "enabled")?;
+    let weight = args.get("weight").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
+    let mut session = session.lock().await;
+    match session.with_model_mut(&id, |m| {
+        if enabled {
+            if m.breath.is_none() {
+                m.breath = Some(crate::auto::Breath::new(Default::default()));
+            }
+            if let Some(ref mut b) = m.breath {
+                b.set_weight(weight);
+            }
+        } else {
+            m.breath = None;
+        }
+        success(r#"{"success": true}"#)
+    }) {
+        Ok(result) => result,
+        Err(e) => tool_error(e.to_string()),
+    }
 }
 
 pub async fn handle_configure_mouse_tracker(
-    _session: &Arc<Mutex<ModelSession>>,
-    _args: JsonObject,
+    session: &Arc<Mutex<ModelSession>>,
+    args: JsonObject,
 ) -> ToolResult {
-    tool_error("not yet implemented")
+    let id = get_string(&args, "model_id")?;
+    let x = get_number(&args, "x")? as f32;
+    let y = get_number(&args, "y")? as f32;
+    let weight = args.get("weight").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
+    let mut session = session.lock().await;
+    match session.with_model_mut(&id, |m| {
+        if m.mouse_tracker.is_none() {
+            m.mouse_tracker = Some(crate::auto::MouseTracker::new(Default::default()));
+        }
+        if let Some(ref mut mt) = m.mouse_tracker {
+            mt.set_target(x, y);
+            mt.set_weight(weight);
+        }
+        success(r#"{"success": true}"#)
+    }) {
+        Ok(result) => result,
+        Err(e) => tool_error(e.to_string()),
+    }
 }
 
 pub async fn handle_configure_physics(
-    _session: &Arc<Mutex<ModelSession>>,
-    _args: JsonObject,
+    session: &Arc<Mutex<ModelSession>>,
+    args: JsonObject,
 ) -> ToolResult {
-    tool_error("not yet implemented")
+    let id = get_string(&args, "model_id")?;
+    let enabled = get_bool(&args, "enabled")?;
+    let mut session = session.lock().await;
+    match session.with_model_mut(&id, |m| {
+        if enabled {
+            tool_error("physics re-enablement requires model reload; only disabling is supported")
+        } else {
+            m.model.runtime_mut().clear_physics();
+            success(r#"{"success": true}"#)
+        }
+    }) {
+        Ok(result) => result,
+        Err(e) => tool_error(e.to_string()),
+    }
 }
 
 pub async fn handle_tick(
-    _session: &Arc<Mutex<ModelSession>>,
-    _args: JsonObject,
+    session: &Arc<Mutex<ModelSession>>,
+    args: JsonObject,
 ) -> ToolResult {
-    tool_error("not yet implemented")
+    let id = get_string(&args, "model_id")?;
+    let delta = get_number(&args, "delta_seconds")? as f32;
+    let mut session = session.lock().await;
+    match session.with_model_mut(&id, |m| {
+        let runtime = m.model.runtime_mut();
+
+        // Auto-systems: tick advances internal state, apply writes params
+        if let Some(ref mut eb) = m.eye_blink {
+            eb.tick(delta);
+            eb.apply(runtime);
+        }
+        if let Some(ref mut ls) = m.lip_sync {
+            ls.tick(delta);
+            ls.apply(runtime);
+        }
+        if let Some(ref mut b) = m.breath {
+            b.tick(delta);
+            b.apply(runtime);
+        }
+        if let Some(ref mut mt) = m.mouse_tracker {
+            mt.tick(delta);
+            mt.apply(runtime);
+        }
+
+        // Motion: tick advances time, apply writes parameters
+        m.motion_manager.tick(delta);
+        m.motion_manager.apply(runtime);
+        let motion_events = m.motion_manager.drain_events();
+
+        // Expression: apply only (no tick needed)
+        m.expression_manager.apply(runtime);
+
+        // Meshes: rebuild from current parameter state
+        runtime.update_meshes();
+
+        let events_json = serde_json::to_string(&motion_events).unwrap_or_else(|_| "[]".into());
+        success(format!(r#"{{"success": true, "events": {events_json}}}"#))
+    }) {
+        Ok(result) => result,
+        Err(e) => tool_error(e.to_string()),
+    }
 }
 
 pub async fn handle_get_state(
-    _session: &Arc<Mutex<ModelSession>>,
-    _args: JsonObject,
+    session: &Arc<Mutex<ModelSession>>,
+    args: JsonObject,
 ) -> ToolResult {
-    tool_error("not yet implemented")
+    let id = get_string(&args, "model_id")?;
+    let session = session.lock().await;
+    match session.with_model(&id, |m| {
+        let runtime = m.model.runtime();
+        let params: Vec<serde_json::Value> = runtime
+            .parameter_infos()
+            .map(|p| {
+                serde_json::json!({
+                    "id": p.id(),
+                    "value": p.value(),
+                    "min": p.minimum(),
+                    "max": p.maximum(),
+                    "default": p.default(),
+                })
+            })
+            .collect();
+        let state = serde_json::json!({
+            "parameters": params,
+            "drawable_count": runtime.meshes().len(),
+            "has_eye_blink": m.eye_blink.is_some(),
+            "has_lip_sync": m.lip_sync.is_some(),
+            "has_breath": m.breath.is_some(),
+            "has_mouse_tracker": m.mouse_tracker.is_some(),
+            "active_motions": m.motion_manager.active_count(),
+        });
+        success(serde_json::to_string_pretty(&state).unwrap_or_else(|_| "{}".into()))
+    }) {
+        Ok(result) => result,
+        Err(e) => tool_error(e.to_string()),
+    }
 }
