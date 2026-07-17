@@ -389,7 +389,7 @@ pub fn create_userdata_json_tool() -> Tool {
 pub fn create_simple_moc3_tool() -> Tool {
     Tool::new(
         "create_simple_moc3",
-        "Generate a minimal valid .moc3 binary",
+        "Generate a minimal valid .moc3 binary (placeholder — not yet implemented)",
         tool_schema(
             json!({
                 "name": { "type": "string" },

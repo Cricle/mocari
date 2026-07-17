@@ -1,18 +1,6 @@
 use rmcp::model::JsonObject;
 
-use super::{ToolResult, tool_error, success};
-
-fn get_string(args: &JsonObject, key: &str) -> Result<String, rmcp::ErrorData> {
-    args.get(key)
-        .and_then(|v| v.as_str().map(String::from))
-        .ok_or_else(|| rmcp::ErrorData::invalid_params(format!("missing '{key}'"), None))
-}
-
-fn get_number(args: &JsonObject, key: &str) -> Result<f64, rmcp::ErrorData> {
-    args.get(key)
-        .and_then(|v| v.as_f64())
-        .ok_or_else(|| rmcp::ErrorData::invalid_params(format!("missing '{key}'"), None))
-}
+use super::{ToolResult, tool_error, success, get_string, get_number};
 
 // -- JSON file generators ---------------------------------------------------
 
@@ -181,7 +169,7 @@ pub async fn handle_create_model_bundle(args: JsonObject) -> ToolResult {
 
     success(format!(
         r#"{{"model_json": {}, "files": {}}}"#,
-        serde_json::to_string(&json_str).unwrap_or_else(|_| "\"\"".into()),
+        json_str,
         serde_json::to_string(&files).unwrap_or_else(|_| "[]".into())
     ))
 }

@@ -4,25 +4,7 @@ use rmcp::model::JsonObject;
 use tokio::sync::Mutex;
 
 use super::session::ModelSession;
-use super::{ToolResult, tool_error, success};
-
-fn get_string(args: &JsonObject, key: &str) -> Result<String, rmcp::ErrorData> {
-    args.get(key)
-        .and_then(|v| v.as_str().map(String::from))
-        .ok_or_else(|| rmcp::ErrorData::invalid_params(format!("missing '{key}'"), None))
-}
-
-fn get_number(args: &JsonObject, key: &str) -> Result<f64, rmcp::ErrorData> {
-    args.get(key)
-        .and_then(|v| v.as_f64())
-        .ok_or_else(|| rmcp::ErrorData::invalid_params(format!("missing '{key}'"), None))
-}
-
-fn get_bool(args: &JsonObject, key: &str) -> Result<bool, rmcp::ErrorData> {
-    args.get(key)
-        .and_then(|v| v.as_bool())
-        .ok_or_else(|| rmcp::ErrorData::invalid_params(format!("missing '{key}'"), None))
-}
+use super::{ToolResult, tool_error, success, get_string, get_number, get_bool};
 
 // -- Model loading / listing -------------------------------------------------
 

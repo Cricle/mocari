@@ -456,11 +456,13 @@ async fn test_handle_create_model_bundle_success() {
     let parsed: serde_json::Value =
         serde_json::from_str(&text).expect("result should be valid JSON");
     // The bundle should reference files with the character name
-    let model_json_str = parsed["model_json"].as_str().expect("model_json should be a string");
-    assert!(
-        model_json_str.contains("MyChar.moc3"),
-        "model JSON should reference the moc3 file"
-    );
+    let model_json = parsed["model_json"].as_object().expect("model_json should be an object");
+    let moc_ref = model_json
+        .get("FileReferences")
+        .and_then(|fr| fr.get("Moc"))
+        .and_then(|m| m.as_str())
+        .expect("model_json should have FileReferences.Moc");
+    assert_eq!(moc_ref, "MyChar.moc3", "model JSON should reference the moc3 file");
     let files = parsed["files"].as_array().expect("files should be an array");
     assert_eq!(files.len(), 3, "bundle should contain 3 files");
 }

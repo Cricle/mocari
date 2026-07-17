@@ -24,6 +24,24 @@ pub(super) fn success(text: impl Into<String>) -> ToolResult {
     Ok(CallToolResult::success(vec![ContentBlock::text(text)]).into())
 }
 
+pub(super) fn get_string(args: &JsonObject, key: &str) -> Result<String, rmcp::ErrorData> {
+    args.get(key)
+        .and_then(|v| v.as_str().map(String::from))
+        .ok_or_else(|| rmcp::ErrorData::invalid_params(format!("missing '{key}'"), None))
+}
+
+pub(super) fn get_number(args: &JsonObject, key: &str) -> Result<f64, rmcp::ErrorData> {
+    args.get(key)
+        .and_then(|v| v.as_f64())
+        .ok_or_else(|| rmcp::ErrorData::invalid_params(format!("missing '{key}'"), None))
+}
+
+pub(super) fn get_bool(args: &JsonObject, key: &str) -> Result<bool, rmcp::ErrorData> {
+    args.get(key)
+        .and_then(|v| v.as_bool())
+        .ok_or_else(|| rmcp::ErrorData::invalid_params(format!("missing '{key}'"), None))
+}
+
 #[derive(Debug, Clone)]
 pub struct MocariMcpServer {
     session: Arc<Mutex<ModelSession>>,

@@ -13,7 +13,7 @@ exclude = ["assets/", ".github/"]
 [features]
 default = []
 wgpu = ["dep:wgpu"]
-mcp = ["dep:rmcp", "dep:tokio", "dep:base64", "dep:clap"]
+mcp = ["dep:rmcp", "dep:tokio", "dep:clap"]
 mcp-http = ["mcp", "rmcp/transport-streamable-http-server"]
 
 [dependencies]
@@ -25,7 +25,6 @@ thiserror = "2"
 wgpu = { version = "30.0.0", features = ["noop"], optional = true }
 rmcp = { version = "2", default-features = false, features = ["server", "transport-io", "macros", "schemars"], optional = true }
 tokio = { version = "1", features = ["full"], optional = true }
-base64 = { version = "0.22", optional = true }
 clap = { version = "4", features = ["derive"], optional = true }
 
 [dev-dependencies]
