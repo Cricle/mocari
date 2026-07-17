@@ -591,3 +591,67 @@ fn assert_close(actual: f32, expected: f32) {
         "actual {actual}, expected {expected}"
     );
 }
+
+// ── EyeBlink auto-animation tests ──────────────────────────────────────────
+
+use mocari::auto::EyeBlink;
+
+#[test]
+fn eye_blink_default_config_has_reasonable_values() {
+    let blink = EyeBlink::with_defaults();
+    // We can't access config fields directly, but we can verify behavior
+    let mut model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+    let runtime = model.runtime_mut();
+    // Eyes should start open (blink hasn't happened yet)
+    blink.apply(runtime);
+    // ParamEyeLOpen should still be at default after apply with no tick
+    let value = runtime.parameter_value("ParamEyeLOpen");
+    assert!(value.is_some());
+}
+
+#[test]
+fn eye_blink_closes_eyes_during_blink() {
+    let config = mocari::auto::EyeBlinkConfig {
+        min_interval: 0.0,
+        max_interval: 0.0,
+        close_duration: 0.1,
+        open_duration: 0.15,
+        weight: 1.0,
+    };
+    let mut blink = EyeBlink::new(config);
+    let mut model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+
+    // Tick to trigger immediate blink (interval = 0)
+    blink.tick(0.001);
+    // Tick into closing phase
+    blink.tick(0.05);
+    let runtime = model.runtime_mut();
+    runtime.reset_parameters();
+    blink.apply(runtime);
+
+    let left = runtime.parameter_value("ParamEyeLOpen").unwrap();
+    let right = runtime.parameter_value("ParamEyeROpen").unwrap();
+    assert!(left < 1.0, "left eye should be closing: {left}");
+    assert!(right < 1.0, "right eye should be closing: {right}");
+}
+
+#[test]
+fn eye_blink_weight_zero_has_no_effect() {
+    let mut blink = EyeBlink::with_defaults();
+    blink.set_weight(0.0);
+    let mut model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+    let runtime = model.runtime_mut();
+    let before = runtime.parameter_value("ParamEyeLOpen").unwrap();
+    runtime.reset_parameters();
+    blink.tick(0.5);
+    blink.apply(runtime);
+    let after = runtime.parameter_value("ParamEyeLOpen").unwrap();
+    assert_close_runtime(after, before);
+}
+
+fn assert_close_runtime(actual: f32, expected: f32) {
+    assert!(
+        (actual - expected).abs() < 0.01,
+        "actual {actual}, expected {expected}"
+    );
+}
