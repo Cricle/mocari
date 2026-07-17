@@ -696,6 +696,46 @@ fn assert_close_lip(actual: f32, expected: f32) {
     );
 }
 
+// ── MouseTracker tests ─────────────────────────────────────────────────────
+
+use mocari::auto::MouseTracker;
+
+#[test]
+fn mouse_tracker_smooths_toward_target() {
+    let mut tracker = MouseTracker::with_defaults();
+    tracker.set_target(1.0, -1.0);
+    let mut model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+
+    tracker.tick(1.0 / 60.0);
+    let runtime = model.runtime_mut();
+    runtime.reset_parameters();
+    tracker.apply(runtime);
+    let angle_x = runtime.parameter_value("ParamAngleX").unwrap();
+    assert!(angle_x > 0.0, "should track toward positive X: {angle_x}");
+}
+
+#[test]
+fn mouse_tracker_weight_zero_has_no_effect() {
+    let mut tracker = MouseTracker::with_defaults();
+    tracker.set_weight(0.0);
+    tracker.set_target(1.0, 1.0);
+    let mut model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+    let runtime = model.runtime_mut();
+    let before = runtime.parameter_value("ParamAngleX").unwrap();
+    tracker.tick(1.0);
+    runtime.reset_parameters();
+    tracker.apply(runtime);
+    let after = runtime.parameter_value("ParamAngleX").unwrap();
+    assert_close_mouse(after, before);
+}
+
+fn assert_close_mouse(actual: f32, expected: f32) {
+    assert!(
+        (actual - expected).abs() < 0.01,
+        "actual {actual}, expected {expected}"
+    );
+}
+
 // ── MotionManager tests ────────────────────────────────────────────────────
 
 #[test]
