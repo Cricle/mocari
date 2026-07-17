@@ -785,6 +785,54 @@ fn lip_sync_weight_zero_has_no_effect() {
 }
 
 
+// ── Drawable color override tests ───────────────────────────────────────────
+
+#[test]
+fn drawable_multiply_color_override() {
+    let mut model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+    let runtime = model.runtime_mut();
+
+    // Default is no override
+    assert!(runtime.drawable_multiply_color_override(0).is_none());
+
+    // Set override
+    runtime.set_drawable_multiply_color_by_index(0, [0.5, 0.5, 0.5]);
+    assert_eq!(runtime.drawable_multiply_color_override(0), Some([0.5, 0.5, 0.5]));
+
+    // After update_meshes, mesh color reflects override
+    runtime.update_meshes();
+    assert_eq!(runtime.mesh_multiply_color(0), Some([0.5, 0.5, 0.5]));
+
+    // Clear overrides reverts to keyform default
+    runtime.clear_drawable_color_overrides();
+    runtime.update_meshes();
+    assert_eq!(runtime.mesh_multiply_color(0), Some([1.0, 1.0, 1.0]));
+}
+
+#[test]
+fn drawable_screen_color_override() {
+    let mut model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+    let runtime = model.runtime_mut();
+
+    runtime.set_drawable_screen_color_by_index(0, [0.1, 0.2, 0.3]);
+    runtime.update_meshes();
+    assert_eq!(runtime.mesh_screen_color(0), Some([0.1, 0.2, 0.3]));
+
+    runtime.clear_drawable_color_overrides();
+    runtime.update_meshes();
+    assert_eq!(runtime.mesh_screen_color(0), Some([0.0, 0.0, 0.0]));
+}
+
+#[test]
+fn set_drawable_color_by_id() {
+    let mut model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+    let runtime = model.runtime_mut();
+    let id = runtime.drawable_ids()[0].clone();
+
+    assert!(runtime.set_drawable_multiply_color(&id, [0.8, 0.8, 0.8]));
+    assert!(!runtime.set_drawable_multiply_color("nonexistent", [0.0, 0.0, 0.0]));
+}
+
 // ── Drawable visibility tests ───────────────────────────────────────────────
 
 #[test]
