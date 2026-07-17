@@ -42,6 +42,10 @@ impl ServerHandler for MocariMcpServer {
         InitializeResult::new(
             ServerCapabilities::builder().enable_tools().build(),
         )
+        .with_server_info(Implementation::new(
+            "mocari-mcp",
+            env!("CARGO_PKG_VERSION"),
+        ))
         .with_instructions(
             "Mocari MCP server for Live2D model control and creation. \
              Use load_model to load a .model3.json file, then control \
