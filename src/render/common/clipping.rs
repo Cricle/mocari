@@ -17,6 +17,7 @@ pub struct DrawableInfo {
     masks: Arc<[i32]>,
     mask_key: Arc<[i32]>,
     inverted_mask: bool,
+    double_sided: bool,
     bounds: Option<ClippingRect>,
 }
 
@@ -35,6 +36,7 @@ impl DrawableInfo {
             masks,
             mask_key,
             inverted_mask: mesh.is_inverted_mask(),
+            double_sided: mesh.is_double_sided(),
             bounds: drawable_vertex_bounds(mesh.vertices()),
         }
     }
@@ -77,6 +79,11 @@ impl DrawableInfo {
     /// Returns whether this drawable uses inverted mask semantics.
     pub fn inverted_mask(&self) -> bool {
         self.inverted_mask
+    }
+
+    /// Returns whether this drawable disables back-face culling.
+    pub fn is_double_sided(&self) -> bool {
+        self.double_sided
     }
 
     /// Returns the model-space bounding rectangle for this drawable.

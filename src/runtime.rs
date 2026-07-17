@@ -138,6 +138,8 @@ pub struct ModelRuntime {
     meshes: Vec<Moc3DrawableMesh>,
     mesh_update_scratch: Moc3MeshUpdateScratch,
     drawable_visible: Vec<bool>,
+    drawable_multiply_overrides: Vec<Option<[f32; 3]>>,
+    drawable_screen_overrides: Vec<Option<[f32; 3]>>,
     user_data: Option<UserData3>,
 }
 
@@ -205,6 +207,8 @@ impl ModelRuntime {
             meshes: Vec::new(),
             mesh_update_scratch: Moc3MeshUpdateScratch::default(),
             drawable_visible: vec![true; drawable_count],
+            drawable_multiply_overrides: vec![None; drawable_count],
+            drawable_screen_overrides: vec![None; drawable_count],
             user_data: None,
         };
         runtime.update_meshes()?;
@@ -688,6 +692,7 @@ impl ModelRuntime {
         let drawable_part_opacities = self.drawable_part_opacities();
         self.rebuild_or_update_meshes(&drawable_part_opacities)?;
         self.apply_mesh_post_processing()?;
+        self.apply_drawable_color_overrides();
         self.apply_drawable_visibility();
         Some(())
     }
@@ -726,6 +731,17 @@ impl ModelRuntime {
             .apply(&mut self.meshes, &self.bindings, &self.parameter_values)?;
         self.apply_group_render_orders();
         Some(())
+    }
+
+    fn apply_drawable_color_overrides(&mut self) {
+        for (index, mesh) in self.meshes.iter_mut().enumerate() {
+            if let Some(color) = self.drawable_multiply_overrides.get(index).and_then(|c| *c) {
+                mesh.set_multiply_color(color);
+            }
+            if let Some(color) = self.drawable_screen_overrides.get(index).and_then(|c| *c) {
+                mesh.set_screen_color(color);
+            }
+        }
     }
 
     fn apply_drawable_visibility(&mut self) {
@@ -800,9 +816,77 @@ impl ModelRuntime {
         self.drawable_visible.get(index).copied().unwrap_or(true)
     }
 
+    /// Returns whether a drawable disables back-face culling.
+    pub fn is_drawable_double_sided(&self, index: usize) -> bool {
+        self.meshes
+            .get(index)
+            .map(|m| m.is_double_sided())
+            .unwrap_or(false)
+    }
+
     /// Resets all drawables to visible.
     pub fn reset_drawable_visibility(&mut self) {
         self.drawable_visible.fill(true);
+    }
+
+    /// Returns the pending multiply color override for a drawable index.
+    pub fn drawable_multiply_color_override(&self, index: usize) -> Option<[f32; 3]> {
+        self.drawable_multiply_overrides.get(index).copied().flatten()
+    }
+
+    /// Returns the pending screen color override for a drawable index.
+    pub fn drawable_screen_color_override(&self, index: usize) -> Option<[f32; 3]> {
+        self.drawable_screen_overrides.get(index).copied().flatten()
+    }
+
+    /// Sets a multiply color override by drawable id.
+    pub fn set_drawable_multiply_color(&mut self, id: &str, color: [f32; 3]) -> bool {
+        match self.drawable_index(id) {
+            Some(index) => self.set_drawable_multiply_color_by_index(index, color),
+            None => false,
+        }
+    }
+
+    /// Sets a multiply color override by drawable index.
+    pub fn set_drawable_multiply_color_by_index(&mut self, index: usize, color: [f32; 3]) -> bool {
+        let Some(slot) = self.drawable_multiply_overrides.get_mut(index) else {
+            return false;
+        };
+        *slot = Some(color);
+        true
+    }
+
+    /// Sets a screen color override by drawable id.
+    pub fn set_drawable_screen_color(&mut self, id: &str, color: [f32; 3]) -> bool {
+        match self.drawable_index(id) {
+            Some(index) => self.set_drawable_screen_color_by_index(index, color),
+            None => false,
+        }
+    }
+
+    /// Sets a screen color override by drawable index.
+    pub fn set_drawable_screen_color_by_index(&mut self, index: usize, color: [f32; 3]) -> bool {
+        let Some(slot) = self.drawable_screen_overrides.get_mut(index) else {
+            return false;
+        };
+        *slot = Some(color);
+        true
+    }
+
+    /// Clears all drawable color overrides.
+    pub fn clear_drawable_color_overrides(&mut self) {
+        self.drawable_multiply_overrides.fill(None);
+        self.drawable_screen_overrides.fill(None);
+    }
+
+    /// Returns the current multiply color on a mesh (after update_meshes).
+    pub fn mesh_multiply_color(&self, index: usize) -> Option<[f32; 3]> {
+        self.meshes.get(index).map(|m| m.multiply_color())
+    }
+
+    /// Returns the current screen color on a mesh (after update_meshes).
+    pub fn mesh_screen_color(&self, index: usize) -> Option<[f32; 3]> {
+        self.meshes.get(index).map(|m| m.screen_color())
     }
 
     /// Returns the current drawable meshes in model order.

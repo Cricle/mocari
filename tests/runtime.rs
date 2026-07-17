@@ -366,6 +366,37 @@ fn one_shot_player_finishes_looping_motion() {
     assert_eq!(player.time(), 1.0);
 }
 
+#[test]
+fn motion_player_drain_events() {
+    let json = r#"{
+        "Version": 3,
+        "Meta": {"Duration": 2.0, "Fps": 30.0, "Loop": false, "CurveCount": 0, "TotalSegmentCount": 0, "TotalPointCount": 0},
+        "Curves": [],
+        "UserData": [
+            {"Time": 0.5, "Value": "hello"},
+            {"Time": 1.0, "Value": "world"}
+        ]
+    }"#;
+    let motion = Motion3::from_json_str(json).unwrap();
+    let mut player = MotionPlayer::new_once(motion);
+
+    // Before any tick, no events
+    assert!(player.drain_events().is_empty());
+
+    // Tick past first event
+    player.tick(0.6);
+    let events = player.drain_events();
+    assert_eq!(events, vec!["hello"]);
+
+    // Tick past second event
+    player.tick(0.5);
+    let events = player.drain_events();
+    assert_eq!(events, vec!["world"]);
+
+    // No more events
+    assert!(player.drain_events().is_empty());
+}
+
 fn hiyori_mesh_snapshot(model: &mocari::assets::RuntimeModel) -> Vec<Vec<[f32; 2]>> {
     model
         .runtime()
@@ -805,6 +836,16 @@ fn set_drawable_visible_by_index_works() {
     assert!(!model.runtime().is_drawable_visible(0));
     model.runtime_mut().set_drawable_visible_by_index(0, true);
     assert!(model.runtime().is_drawable_visible(0));
+}
+
+#[test]
+fn drawable_culling_flag_from_model() {
+    let model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+    let runtime = model.runtime();
+    // All drawables should report a culling flag (default false for most models)
+    for index in 0..runtime.drawable_ids().len() {
+        let _ = runtime.is_drawable_double_sided(index);
+    }
 }
 
 // ── MouseTracker tests ─────────────────────────────────────────────────────

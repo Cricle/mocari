@@ -5,6 +5,8 @@ use super::{Moc3ArtMeshKeyforms, Moc3ArtMeshes};
 const DRAWABLE_BLEND_ADDITIVE: u8 = 1 << 0;
 const DRAWABLE_BLEND_MULTIPLICATIVE: u8 = 1 << 1;
 const DRAWABLE_MASK_INVERTED: u8 = 1 << 3;
+const DRAWABLE_DOUBLE_SIDED: u8 = 1 << 2;
+
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 /// One vertex in a generated drawable mesh.
@@ -157,6 +159,11 @@ impl Moc3DrawableMesh {
     /// Returns whether this drawable uses inverted mask semantics.
     pub fn is_inverted_mask(&self) -> bool {
         self.drawable_flags & DRAWABLE_MASK_INVERTED != 0
+    }
+
+    /// Returns whether this drawable disables back-face culling.
+    pub fn is_double_sided(&self) -> bool {
+        self.drawable_flags & DRAWABLE_DOUBLE_SIDED != 0
     }
 
     /// Returns the drawable opacity.
