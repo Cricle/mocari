@@ -488,7 +488,8 @@ pub async fn handle_tick(
         m.motion_manager.apply(runtime);
         let motion_events = m.motion_manager.drain_events();
 
-        // Expression: apply only (no tick needed)
+        // Expression: tick advances fades, apply writes parameters
+        m.expression_manager.tick(delta);
         m.expression_manager.apply(runtime);
 
         // Meshes: rebuild from current parameter state
