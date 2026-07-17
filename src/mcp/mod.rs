@@ -12,6 +12,18 @@ use tokio::sync::Mutex;
 
 pub use session::ModelSession;
 
+// Shared tool helpers used by both runtime and creator modules.
+
+pub(super) type ToolResult = Result<CallToolResult, rmcp::ErrorData>;
+
+pub(super) fn tool_error(msg: impl Into<String>) -> ToolResult {
+    Ok(CallToolResult::error(vec![ContentBlock::text(msg)]))
+}
+
+pub(super) fn success(text: impl Into<String>) -> ToolResult {
+    Ok(CallToolResult::success(vec![ContentBlock::text(text)]).into())
+}
+
 #[derive(Debug, Clone)]
 pub struct MocariMcpServer {
     session: Arc<Mutex<ModelSession>>,

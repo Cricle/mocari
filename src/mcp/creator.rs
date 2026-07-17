@@ -1,10 +1,6 @@
-use rmcp::model::{CallToolResult, ContentBlock, JsonObject};
+use rmcp::model::JsonObject;
 
-type ToolResult = Result<CallToolResult, rmcp::ErrorData>;
-
-fn tool_error(msg: impl Into<String>) -> ToolResult {
-    Ok(CallToolResult::error(vec![ContentBlock::text(msg)]))
-}
+use super::{ToolResult, tool_error};
 
 // Stub handlers -- return "not yet implemented"
 
