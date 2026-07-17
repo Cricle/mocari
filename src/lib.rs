@@ -52,6 +52,8 @@ pub mod moc3;
 pub mod motion;
 /// Renderer-facing helpers and optional backend implementations.
 pub mod render;
+/// Auto-animation features for eye blink, lip sync, breath, and mouse tracking.
+pub mod auto;
 /// Mutable model state used for parameter edits, pose updates, and mesh output.
 pub mod runtime;
 
