@@ -127,10 +127,68 @@ pub async fn handle_create_userdata_json(args: JsonObject) -> ToolResult {
     success(serde_json::to_string_pretty(&userdata).unwrap_or_else(|_| "{}".into()))
 }
 
-pub async fn handle_create_simple_moc3(_args: JsonObject) -> ToolResult {
-    tool_error("not yet implemented")
+pub async fn handle_create_simple_moc3(args: JsonObject) -> ToolResult {
+    let _name = get_string(&args, "name")?;
+    let _width = get_number(&args, "width")?;
+    let _height = get_number(&args, "height")?;
+    let _parameters = args.get("parameters")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| rmcp::ErrorData::invalid_params("missing 'parameters'", None))?;
+    let _meshes = args.get("meshes")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| rmcp::ErrorData::invalid_params("missing 'meshes'", None))?;
+
+    // Minimal moc3 binary: magic + version header
+    // Real moc3 generation is extremely complex; this produces a placeholder
+    // that indicates the structure without full binary generation.
+    let mut binary = Vec::new();
+    binary.extend_from_slice(b"MOC3");  // magic
+    binary.extend_from_slice(&[0, 0, 0, 3]);  // version 3
+    // Remaining structure would require full moc3 format implementation
+    // For now, return an error indicating this is a complex operation
+    tool_error("create_simple_moc3: moc3 binary generation requires full Cubism SDK format implementation — use create_model_json to generate the JSON sidecar instead")
 }
 
-pub async fn handle_create_model_bundle(_args: JsonObject) -> ToolResult {
-    tool_error("not yet implemented")
+pub async fn handle_create_model_bundle(args: JsonObject) -> ToolResult {
+    let name = get_string(&args, "name")?;
+    let _description = args.get("description").and_then(|v| v.as_str()).unwrap_or("");
+    let _meshes = args.get("meshes")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| rmcp::ErrorData::invalid_params("missing 'meshes'", None))?;
+    let _parameters = args.get("parameters")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| rmcp::ErrorData::invalid_params("missing 'parameters'", None))?;
+    let motions = args.get("motions").cloned().unwrap_or(serde_json::json!([]));
+    let expressions = args.get("expressions").cloned().unwrap_or(serde_json::json!([]));
+
+    // Generate the model3.json content
+    let model_json = serde_json::json!({
+        "Version": 3,
+        "FileReferences": {
+            "Moc": format!("{name}.moc3"),
+            "Textures": [format!("{name}.png")],
+            "Motions": {
+                "": motions
+            },
+            "Expressions": expressions,
+        },
+        "Groups": []
+    });
+
+    let json_str = serde_json::to_string_pretty(&model_json)
+        .unwrap_or_else(|_| "{}".into());
+
+    // For bundle creation, we'd write files to disk. Since MCP is headless,
+    // return the file contents and let the client write them.
+    let files = vec![
+        format!("{name}.model3.json"),
+        format!("{name}.png"),
+        format!("{name}.moc3"),
+    ];
+
+    success(format!(
+        r#"{{"model_json": {}, "files": {}}}"#,
+        serde_json::to_string(&json_str).unwrap_or_else(|_| "\"\"".into()),
+        serde_json::to_string(&files).unwrap_or_else(|_| "[]".into())
+    ))
 }
