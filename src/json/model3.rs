@@ -92,6 +92,11 @@ impl Model3 {
     pub fn hit_areas(&self) -> &[HitArea] {
         &self.hit_areas
     }
+
+    /// Returns the optional `userdata3.json` path.
+    pub fn user_data(&self) -> Option<&str> {
+        self.file_references.user_data.as_deref()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -122,6 +127,8 @@ struct FileReferences {
     motions: BTreeMap<String, Vec<MotionReference>>,
     #[serde(rename = "Expressions", default)]
     expressions: Vec<ExpressionReference>,
+    #[serde(rename = "UserData", default)]
+    user_data: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]

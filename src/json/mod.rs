@@ -11,6 +11,7 @@ mod model3;
 mod motion3;
 mod physics3;
 mod pose3;
+mod userdata3;
 
 pub use cdi3::{Cdi3, CdiEntry, CdiPart};
 pub use expression3::{
@@ -32,3 +33,4 @@ pub use pose3::{
     DEFAULT_POSE_FADE_IN_TIME, Pose3, PosePart, copy_pose_link_opacities,
     resolved_pose_fade_in_time, update_pose_group_opacities,
 };
+pub use userdata3::{UserData3, UserDataEntry, UserDataTarget};

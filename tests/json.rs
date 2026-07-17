@@ -86,6 +86,23 @@ mod model3 {
     }
 
     #[test]
+    fn model3_user_data_accessor() {
+        let model = Model3::from_json_str(
+            r#"{
+                "Version": 3,
+                "FileReferences": {
+                    "Moc": "model.moc3",
+                    "Textures": ["texture_00.png"],
+                    "UserData": "model.userdata3.json"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(model.user_data(), Some("model.userdata3.json"));
+    }
+
+    #[test]
     fn rejects_unsupported_model3_version() {
         let error = Model3::from_json_str(
             r#"{
@@ -304,6 +321,39 @@ mod cdi3 {
                 version: 2
             }
         ));
+    }
+}
+
+mod userdata3 {
+    use mocari::json::UserData3;
+
+    #[test]
+    fn userdata3_parses_entries() {
+        let json = r#"{
+            "Version": 3,
+            "UserData": [
+                { "Target": "Parameter", "Id": "ParamAngleX", "Value": "head_turn" },
+                { "Target": "Part", "Id": "PartArmL", "Value": "left_arm" },
+                { "Target": "Drawable", "Id": "DrawBody", "Value": "body_mesh" }
+            ]
+        }"#;
+
+        let data = UserData3::from_json_str(json).unwrap();
+        assert_eq!(data.version(), 3);
+        assert_eq!(data.entries().len(), 3);
+        assert_eq!(data.entries()[0].id(), "ParamAngleX");
+        assert_eq!(data.entries()[0].value(), "head_turn");
+    }
+
+    #[test]
+    fn userdata3_empty_is_valid() {
+        let json = r#"{
+            "Version": 3,
+            "UserData": []
+        }"#;
+
+        let data = UserData3::from_json_str(json).unwrap();
+        assert_eq!(data.entries().len(), 0);
     }
 }
 
