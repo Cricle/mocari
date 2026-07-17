@@ -61,6 +61,6 @@ pub use crate::auto::{Breath, BreathConfig, EyeBlink, EyeBlinkConfig, LipSync, L
 pub use crate::core::{DrawableId, Id, ParameterId, PartId};
 pub use crate::error::{Error, Result};
 pub use crate::expression::{ExpressionManager, ExpressionPlayer};
-pub use crate::json::{MotionUserData, UserData3};
+pub use crate::json::{ExpressionTarget, MotionUserData, UserData3};
 pub use crate::motion::{MotionManager, MotionPlayer, MotionPriority};
 pub use crate::runtime::{HitAreaInfo, ModelRuntime, ParameterInfo};

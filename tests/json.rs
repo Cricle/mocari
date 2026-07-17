@@ -127,7 +127,8 @@ mod model3 {
 
 mod expression3 {
     use mocari::json::{
-        Expression3, ExpressionBlend, apply_expression_blend, apply_expression_parameter,
+        Expression3, ExpressionBlend, ExpressionTarget, apply_expression_blend,
+        apply_expression_parameter,
     };
 
     #[test]
@@ -237,6 +238,21 @@ mod expression3 {
             apply_expression_parameter(0.2, &expression.parameters()[0], 0.5),
             0.55
         );
+    }
+
+    #[test]
+    fn expression3_part_opacity_target() {
+        let json = r#"{
+            "Type": "Happy",
+            "Parameters": [
+                {"Id": "ParamEyeLOpen", "Value": 0.0},
+                {"Id": "PartHair", "Value": 0.5, "Target": "PartOpacity"}
+            ]
+        }"#;
+        let expr = Expression3::from_json_str(json).unwrap();
+        assert_eq!(expr.parameters()[0].target(), ExpressionTarget::Parameter);
+        assert_eq!(expr.parameters()[1].target(), ExpressionTarget::PartOpacity);
+        assert_eq!(expr.parameters()[1].id(), "PartHair");
     }
 }
 

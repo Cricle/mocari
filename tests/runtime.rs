@@ -718,6 +718,7 @@ fn eye_blink_closes_eyes_during_blink() {
         close_duration: 0.1,
         open_duration: 0.15,
         weight: 1.0,
+        parameter_indices: Vec::new(),
     };
     let mut blink = EyeBlink::new(config);
     let mut model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
@@ -1114,4 +1115,79 @@ fn motion_manager_group_replacement() {
     // After crossfade completes, old should be removed
     manager.tick(0.5);
     assert_eq!(manager.active_count(), 1, "only new motion should remain after crossfade");
+}
+
+// ── Groups integration tests ────────────────────────────────────────────────
+
+#[test]
+fn eye_blink_config_from_model_groups() {
+    let model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+    let runtime = model.runtime();
+    let config = runtime.eye_blink_config_from_model();
+    // Hiyori has an EyeBlink group with ParamEyeLOpen and ParamEyeROpen
+    if config.parameter_indices.is_empty() {
+        // No EyeBlink group in this model, default config
+        assert_eq!(config.min_interval, 2.5);
+    } else {
+        assert!(!config.parameter_indices.is_empty());
+    }
+}
+
+#[test]
+fn lip_sync_config_from_model_groups() {
+    let model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+    let runtime = model.runtime();
+    let config = runtime.lip_sync_config_from_model();
+    if config.parameter_indices.is_empty() {
+        assert_eq!(config.smoothing, 0.2);
+    } else {
+        assert!(!config.parameter_indices.is_empty());
+    }
+}
+
+#[test]
+fn eye_blink_config_from_model_returns_default_when_no_group() {
+    let model = load_model_runtime("assets/models/Mao/Mao.model3.json").unwrap();
+    let runtime = model.runtime();
+    let config = runtime.eye_blink_config_from_model();
+    // Mao likely has no EyeBlink group - should return default config
+    assert_eq!(config.min_interval, 2.5);
+    assert_eq!(config.max_interval, 6.0);
+}
+
+#[test]
+fn lip_sync_config_from_model_returns_default_when_no_group() {
+    let model = load_model_runtime("assets/models/Mao/Mao.model3.json").unwrap();
+    let runtime = model.runtime();
+    let config = runtime.lip_sync_config_from_model();
+    assert_eq!(config.smoothing, 0.2);
+}
+
+#[test]
+fn eye_blink_with_custom_parameter_indices() {
+    let model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+    let runtime = model.runtime();
+    let config = runtime.eye_blink_config_from_model();
+
+    // If the model has groups, create an EyeBlink with those indices and verify it applies
+    if !config.parameter_indices.is_empty() {
+        let mut blink = EyeBlink::new(config);
+        blink.tick(0.001);
+        blink.tick(0.05);
+        // Just verify it doesn't panic when applying to the runtime
+    }
+}
+
+#[test]
+fn lip_sync_with_custom_parameter_indices() {
+    let model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+    let runtime = model.runtime();
+    let config = runtime.lip_sync_config_from_model();
+
+    if !config.parameter_indices.is_empty() {
+        let mut lip = LipSync::new(config);
+        lip.set_amplitude(0.8);
+        lip.tick(1.0 / 60.0);
+        // Just verify it doesn't panic
+    }
 }

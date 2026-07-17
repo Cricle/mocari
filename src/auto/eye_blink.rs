@@ -16,6 +16,8 @@ pub struct EyeBlinkConfig {
     pub open_duration: f32,
     /// Blend weight 0.0-1.0.
     pub weight: f32,
+    /// Parameter indices to target. If empty, uses default ParamEyeLOpen/ParamEyeROpen.
+    pub parameter_indices: Vec<usize>,
 }
 
 impl Default for EyeBlinkConfig {
@@ -26,6 +28,17 @@ impl Default for EyeBlinkConfig {
             close_duration: 0.1,
             open_duration: 0.15,
             weight: 1.0,
+            parameter_indices: Vec::new(),
+        }
+    }
+}
+
+impl EyeBlinkConfig {
+    /// Creates a config targeting specific parameter indices.
+    pub fn for_parameters(indices: Vec<usize>) -> Self {
+        Self {
+            parameter_indices: indices,
+            ..Default::default()
         }
     }
 }
@@ -125,13 +138,24 @@ impl EyeBlink {
         }
 
         let value = self.blink_value;
-        if let Some(current) = runtime.parameter_value(PARAM_EYE_L_OPEN) {
-            let blended = current + (value - current) * weight;
-            runtime.set_parameter(PARAM_EYE_L_OPEN, blended);
-        }
-        if let Some(current) = runtime.parameter_value(PARAM_EYE_R_OPEN) {
-            let blended = current + (value - current) * weight;
-            runtime.set_parameter(PARAM_EYE_R_OPEN, blended);
+        if self.config.parameter_indices.is_empty() {
+            // Default behavior: target ParamEyeLOpen and ParamEyeROpen
+            if let Some(index) = runtime.parameter_index(PARAM_EYE_L_OPEN) {
+                let current = runtime.parameter_value_by_index(index).unwrap_or(1.0);
+                let blended = current + (value - current) * weight;
+                runtime.set_parameter_by_index(index, blended);
+            }
+            if let Some(index) = runtime.parameter_index(PARAM_EYE_R_OPEN) {
+                let current = runtime.parameter_value_by_index(index).unwrap_or(1.0);
+                let blended = current + (value - current) * weight;
+                runtime.set_parameter_by_index(index, blended);
+            }
+        } else {
+            for &index in &self.config.parameter_indices {
+                let current = runtime.parameter_value_by_index(index).unwrap_or(1.0);
+                let blended = current + (value - current) * weight;
+                runtime.set_parameter_by_index(index, blended);
+            }
         }
     }
 

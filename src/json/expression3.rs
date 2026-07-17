@@ -91,6 +91,25 @@ struct RawExpression3 {
     parameters: Vec<ExpressionParameter>,
 }
 
+/// Target type for an expression parameter.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub enum ExpressionTarget {
+    /// Targets a model parameter (default).
+    #[default]
+    Parameter,
+    /// Targets a part opacity.
+    PartOpacity,
+}
+
+impl ExpressionTarget {
+    fn from_raw(value: Option<&str>) -> Self {
+        match value {
+            Some("PartOpacity") => Self::PartOpacity,
+            _ => Self::Parameter,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 /// One parameter operation in an expression.
 pub struct ExpressionParameter {
@@ -104,6 +123,12 @@ pub struct ExpressionParameter {
         deserialize_with = "deserialize_expression_blend"
     )]
     blend: ExpressionBlend,
+    #[serde(
+        rename = "Target",
+        default,
+        deserialize_with = "deserialize_expression_target"
+    )]
+    target: ExpressionTarget,
 }
 
 impl ExpressionParameter {
@@ -120,6 +145,11 @@ impl ExpressionParameter {
     /// Returns how the value is blended with the current parameter.
     pub fn blend(&self) -> ExpressionBlend {
         self.blend
+    }
+
+    /// Returns the target type for this parameter.
+    pub fn target(&self) -> ExpressionTarget {
+        self.target
     }
 }
 
@@ -177,4 +207,14 @@ where
 {
     Option::<String>::deserialize(deserializer)
         .map(|value| ExpressionBlend::from_raw(value.as_deref()))
+}
+
+fn deserialize_expression_target<'de, D>(
+    deserializer: D,
+) -> std::result::Result<ExpressionTarget, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer)
+        .map(|value| ExpressionTarget::from_raw(value.as_deref()))
 }

@@ -8,7 +8,8 @@ use std::{fs, path::Path};
 
 use crate::{
     json::{
-        Expression3, ExpressionBlend, ExpressionParameter, apply_expression_parameter, easing_sine,
+        Expression3, ExpressionBlend, ExpressionParameter, ExpressionTarget,
+        apply_expression_blend, apply_expression_parameter, easing_sine,
     },
     runtime::ModelRuntime,
 };
@@ -124,14 +125,31 @@ impl ExpressionPlayer {
 
         let weight = self.fade_weight();
         for parameter in self.expression.parameters() {
-            let Some(index) = runtime.parameter_index(parameter.id()) else {
-                continue;
-            };
-            let Some(current) = runtime.parameter_value_by_index(index) else {
-                continue;
-            };
-            let value = apply_expression_parameter(current, parameter, weight);
-            runtime.set_parameter_by_index(index, value);
+            match parameter.target() {
+                ExpressionTarget::Parameter => {
+                    let Some(index) = runtime.parameter_index(parameter.id()) else {
+                        continue;
+                    };
+                    let Some(current) = runtime.parameter_value_by_index(index) else {
+                        continue;
+                    };
+                    let value = apply_expression_parameter(current, parameter, weight);
+                    runtime.set_parameter_by_index(index, value);
+                }
+                ExpressionTarget::PartOpacity => {
+                    let Some(index) = runtime.part_index(parameter.id()) else {
+                        continue;
+                    };
+                    let current = runtime.part_opacity_value(index).unwrap_or(1.0);
+                    let value = apply_expression_blend(
+                        current,
+                        parameter.value(),
+                        parameter.blend(),
+                        weight,
+                    );
+                    runtime.set_part_opacity_by_index(index, value);
+                }
+            }
         }
     }
 
@@ -212,8 +230,34 @@ impl ExpressionManager {
     /// Applies all active expressions to a runtime.
     ///
     /// The manager combines additive, multiply, and overwrite blends before
-    /// writing parameter values.
+    /// writing parameter values. PartOpacity targets are applied directly from
+    /// each player.
     pub fn apply(&self, runtime: &mut ModelRuntime) {
+        // Apply PartOpacity from each player directly
+        for player in &self.players {
+            if player.is_finished() {
+                continue;
+            }
+            let weight = player.fade_weight();
+            for parameter in player.expression().parameters() {
+                if parameter.target() != ExpressionTarget::PartOpacity {
+                    continue;
+                }
+                let Some(index) = runtime.part_index(parameter.id()) else {
+                    continue;
+                };
+                let current = runtime.part_opacity_value(index).unwrap_or(1.0);
+                let value = apply_expression_blend(
+                    current,
+                    parameter.value(),
+                    parameter.blend(),
+                    weight,
+                );
+                runtime.set_part_opacity_by_index(index, value);
+            }
+        }
+
+        // Existing parameter blending logic for Parameter targets
         let mut values = expression_parameter_values(&self.players, runtime);
         if values.is_empty() {
             return;
@@ -273,6 +317,7 @@ fn expression_parameter_values<'a>(
     for parameter in players
         .iter()
         .flat_map(|player| player.expression().parameters())
+        .filter(|parameter| parameter.target() == ExpressionTarget::Parameter)
     {
         if values
             .iter()

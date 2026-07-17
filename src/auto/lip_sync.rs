@@ -9,6 +9,8 @@ pub struct LipSyncConfig {
     pub smoothing: f32,
     /// Blend weight 0.0-1.0.
     pub weight: f32,
+    /// Parameter indices to target. If empty, uses default ParamMouthOpenY.
+    pub parameter_indices: Vec<usize>,
 }
 
 impl Default for LipSyncConfig {
@@ -16,6 +18,17 @@ impl Default for LipSyncConfig {
         Self {
             smoothing: 0.2,
             weight: 1.0,
+            parameter_indices: Vec::new(),
+        }
+    }
+}
+
+impl LipSyncConfig {
+    /// Creates a config targeting specific parameter indices.
+    pub fn for_parameters(indices: Vec<usize>) -> Self {
+        Self {
+            parameter_indices: indices,
+            ..Default::default()
         }
     }
 }
@@ -66,10 +79,19 @@ impl LipSync {
             return;
         }
 
-        if let Some(current) = runtime.parameter_value(PARAM_MOUTH_OPEN_Y) {
-            let value = self.current_amplitude;
-            let blended = current + (value - current) * weight;
-            runtime.set_parameter(PARAM_MOUTH_OPEN_Y, blended);
+        let value = self.current_amplitude;
+        if self.config.parameter_indices.is_empty() {
+            if let Some(index) = runtime.parameter_index(PARAM_MOUTH_OPEN_Y) {
+                let current = runtime.parameter_value_by_index(index).unwrap_or(0.0);
+                let blended = current + (value - current) * weight;
+                runtime.set_parameter_by_index(index, blended);
+            }
+        } else {
+            for &index in &self.config.parameter_indices {
+                let current = runtime.parameter_value_by_index(index).unwrap_or(0.0);
+                let blended = current + (value - current) * weight;
+                runtime.set_parameter_by_index(index, blended);
+            }
         }
     }
 

@@ -567,6 +567,11 @@ impl ModelRuntime {
         self.part_index.get(id).copied()
     }
 
+    /// Returns the current part opacity for an index (before overrides).
+    pub fn part_opacity_value(&self, index: usize) -> Option<f32> {
+        self.part_opacities.get(index).copied()
+    }
+
     /// Overrides a part opacity by id.
     ///
     /// Values are clamped to `0.0..=1.0`. Pose fading can still affect the final
@@ -902,6 +907,46 @@ impl ModelRuntime {
             self.parameter_minimum_by_index(index)?,
             self.parameter_maximum_by_index(index)?,
         ))
+    }
+
+    /// Builds an [`EyeBlinkConfig`](crate::auto::EyeBlinkConfig) from the model's Groups data.
+    ///
+    /// Reads groups named "EyeBlink" and extracts their parameter indices.
+    /// Returns a default config if no EyeBlink group is found.
+    pub fn eye_blink_config_from_model(&self) -> crate::auto::EyeBlinkConfig {
+        let indices: Vec<usize> = self
+            .model
+            .groups()
+            .iter()
+            .filter(|g| g.name() == "EyeBlink" && g.target() == "Parameter")
+            .flat_map(|g| g.ids().iter())
+            .filter_map(|id| self.parameter_index(id))
+            .collect();
+        if indices.is_empty() {
+            crate::auto::EyeBlinkConfig::default()
+        } else {
+            crate::auto::EyeBlinkConfig::for_parameters(indices)
+        }
+    }
+
+    /// Builds a [`LipSyncConfig`](crate::auto::LipSyncConfig) from the model's Groups data.
+    ///
+    /// Reads groups named "LipSync" and extracts their parameter indices.
+    /// Returns a default config if no LipSync group is found.
+    pub fn lip_sync_config_from_model(&self) -> crate::auto::LipSyncConfig {
+        let indices: Vec<usize> = self
+            .model
+            .groups()
+            .iter()
+            .filter(|g| g.name() == "LipSync" && g.target() == "Parameter")
+            .flat_map(|g| g.ids().iter())
+            .filter_map(|id| self.parameter_index(id))
+            .collect();
+        if indices.is_empty() {
+            crate::auto::LipSyncConfig::default()
+        } else {
+            crate::auto::LipSyncConfig::for_parameters(indices)
+        }
     }
 }
 
