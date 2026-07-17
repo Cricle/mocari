@@ -357,6 +357,27 @@ mod userdata3 {
     }
 }
 
+mod motion3_user_data {
+    use mocari::json::Motion3;
+
+    #[test]
+    fn motion3_user_data_parsed() {
+        let json = r#"{
+            "Version": 3,
+            "Meta": {"Duration": 2.0, "Fps": 30.0, "Loop": false, "CurveCount": 0, "TotalSegmentCount": 0, "TotalPointCount": 0},
+            "Curves": [],
+            "UserData": [
+                {"Time": 0.5, "Value": "event_a"},
+                {"Time": 1.2, "Value": "event_b"}
+            ]
+        }"#;
+        let motion = Motion3::from_json_str(json).unwrap();
+        assert_eq!(motion.user_data().len(), 2);
+        assert_eq!(motion.user_data()[0].time(), 0.5);
+        assert_eq!(motion.user_data()[0].value(), "event_a");
+    }
+}
+
 mod pose3 {
     use mocari::json::{
         Pose3, copy_pose_link_opacities, resolved_pose_fade_in_time, update_pose_group_opacities,

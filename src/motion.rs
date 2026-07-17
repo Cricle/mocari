@@ -29,6 +29,8 @@ pub struct MotionPlayer {
     weight: f32,
     looping: bool,
     finished: bool,
+    last_event_time: f32,
+    event_cursor: usize,
 }
 
 impl MotionPlayer {
@@ -53,6 +55,8 @@ impl MotionPlayer {
             weight: 1.0,
             looping,
             finished: false,
+            last_event_time: 0.0,
+            event_cursor: 0,
         }
     }
 
@@ -90,6 +94,8 @@ impl MotionPlayer {
     pub fn restart(&mut self) {
         self.time = 0.0;
         self.finished = false;
+        self.last_event_time = 0.0;
+        self.event_cursor = 0;
     }
 
     /// Advances playback time by `delta_seconds`.
@@ -101,6 +107,7 @@ impl MotionPlayer {
             return;
         }
 
+        self.last_event_time = self.time;
         self.time += delta_seconds.max(0.0);
         let duration = self.motion.meta().duration();
         if duration <= 0.0 {
@@ -108,11 +115,35 @@ impl MotionPlayer {
         }
 
         if self.looping {
-            self.time %= duration;
+            if self.time >= duration {
+                self.time %= duration;
+                self.event_cursor = 0;
+                self.last_event_time = 0.0;
+            }
         } else if self.time >= duration {
             self.time = duration;
             self.finished = true;
         }
+    }
+
+    /// Returns user data events whose time falls within the last tick delta.
+    ///
+    /// Call this after `tick()` to process events that fired this frame.
+    /// Works correctly with looping motions.
+    pub fn drain_events(&mut self) -> Vec<&str> {
+        let motion_data = self.motion.user_data();
+        let mut events = Vec::new();
+        while self.event_cursor < motion_data.len() {
+            let event = &motion_data[self.event_cursor];
+            if event.time() > self.last_event_time && event.time() <= self.time {
+                events.push(event.value());
+            }
+            if event.time() > self.time {
+                break;
+            }
+            self.event_cursor += 1;
+        }
+        events
     }
 
     /// Applies the current motion sample to a model runtime.

@@ -21,8 +21,9 @@ pub use expression3::{
 };
 pub use model3::{ExpressionReference, Group, HitArea, Model3, MotionReference};
 pub use motion3::{
-    Motion3, MotionCurve, MotionMeta, MotionPoint, MotionSegment, apply_motion_fade, easing_sine,
-    motion_fade_in_weight, motion_fade_out_weight, parameter_curve_fade_weight,
+    Motion3, MotionCurve, MotionMeta, MotionPoint, MotionSegment, MotionUserData,
+    apply_motion_fade, easing_sine, motion_fade_in_weight, motion_fade_out_weight,
+    parameter_curve_fade_weight,
 };
 pub use physics3::{
     EffectiveForces, Physics3, PhysicsDictionaryEntry, PhysicsInput, PhysicsMeta,

@@ -11,6 +11,7 @@ pub struct Motion3 {
     version: u32,
     meta: MotionMeta,
     curves: Vec<MotionCurve>,
+    user_data: Vec<MotionUserData>,
 }
 
 impl Motion3 {
@@ -39,6 +40,7 @@ impl Motion3 {
             version: raw.version,
             meta: raw.meta,
             curves,
+            user_data: raw.user_data,
         })
     }
 
@@ -55,6 +57,32 @@ impl Motion3 {
     /// Returns all animation curves in this motion.
     pub fn curves(&self) -> &[MotionCurve] {
         &self.curves
+    }
+
+    /// Returns user data events in this motion.
+    pub fn user_data(&self) -> &[MotionUserData] {
+        &self.user_data
+    }
+}
+
+/// A user data event in a motion file.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct MotionUserData {
+    #[serde(rename = "Time")]
+    time: f32,
+    #[serde(rename = "Value")]
+    value: String,
+}
+
+impl MotionUserData {
+    /// Returns the time in seconds when this event fires.
+    pub fn time(&self) -> f32 {
+        self.time
+    }
+
+    /// Returns the event value string.
+    pub fn value(&self) -> &str {
+        &self.value
     }
 }
 
@@ -374,6 +402,8 @@ struct RawMotion3 {
     meta: MotionMeta,
     #[serde(rename = "Curves", default)]
     curves: Vec<RawMotionCurve>,
+    #[serde(rename = "UserData", default)]
+    user_data: Vec<MotionUserData>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
