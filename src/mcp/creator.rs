@@ -138,14 +138,7 @@ pub async fn handle_create_simple_moc3(args: JsonObject) -> ToolResult {
         .and_then(|v| v.as_array())
         .ok_or_else(|| rmcp::ErrorData::invalid_params("missing 'meshes'", None))?;
 
-    // Minimal moc3 binary: magic + version header
-    // Real moc3 generation is extremely complex; this produces a placeholder
-    // that indicates the structure without full binary generation.
-    let mut binary = Vec::new();
-    binary.extend_from_slice(b"MOC3");  // magic
-    binary.extend_from_slice(&[0, 0, 0, 3]);  // version 3
-    // Remaining structure would require full moc3 format implementation
-    // For now, return an error indicating this is a complex operation
+    // moc3 binary generation requires full Cubism SDK format implementation
     tool_error("create_simple_moc3: moc3 binary generation requires full Cubism SDK format implementation — use create_model_json to generate the JSON sidecar instead")
 }
 
