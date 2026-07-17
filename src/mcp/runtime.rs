@@ -161,52 +161,178 @@ pub async fn handle_get_parameter(
 }
 
 pub async fn handle_list_drawables(
-    _session: &Arc<Mutex<ModelSession>>,
-    _args: JsonObject,
+    session: &Arc<Mutex<ModelSession>>,
+    args: JsonObject,
 ) -> ToolResult {
-    tool_error("not yet implemented")
+    let id = get_string(&args, "model_id")?;
+    let session = session.lock().await;
+    match session.with_model(&id, |m| {
+        let runtime = m.model.runtime();
+        let drawables: Vec<serde_json::Value> = runtime
+            .meshes()
+            .iter()
+            .enumerate()
+            .map(|(i, mesh)| {
+                serde_json::json!({
+                    "id": runtime.drawable_ids().get(i).map(|s| s.as_str()).unwrap_or("unknown"),
+                    "visible": runtime.is_drawable_visible(i),
+                    "opacity": mesh.opacity(),
+                })
+            })
+            .collect();
+        success(serde_json::to_string(&drawables).unwrap_or_else(|_| "[]".into()))
+    }) {
+        Ok(result) => result,
+        Err(e) => tool_error(e.to_string()),
+    }
 }
 
 pub async fn handle_set_drawable_visible(
-    _session: &Arc<Mutex<ModelSession>>,
-    _args: JsonObject,
+    session: &Arc<Mutex<ModelSession>>,
+    args: JsonObject,
 ) -> ToolResult {
-    tool_error("not yet implemented")
+    let id = get_string(&args, "model_id")?;
+    let drawable_id = get_string(&args, "drawable_id")?;
+    let visible = get_bool(&args, "visible")?;
+    let mut session = session.lock().await;
+    match session.with_model_mut(&id, |m| {
+        let runtime = m.model.runtime_mut();
+        if runtime.set_drawable_visible(&drawable_id, visible) {
+            success(r#"{"success": true}"#)
+        } else {
+            tool_error(format!("drawable not found: {drawable_id}"))
+        }
+    }) {
+        Ok(result) => result,
+        Err(e) => tool_error(e.to_string()),
+    }
 }
 
 pub async fn handle_set_drawable_color(
-    _session: &Arc<Mutex<ModelSession>>,
-    _args: JsonObject,
+    session: &Arc<Mutex<ModelSession>>,
+    args: JsonObject,
 ) -> ToolResult {
-    tool_error("not yet implemented")
+    let id = get_string(&args, "model_id")?;
+    let drawable_id = get_string(&args, "drawable_id")?;
+    let multiply = args.get("multiply").and_then(|v| {
+        let arr = v.as_array()?;
+        if arr.len() == 3 {
+            Some([arr[0].as_f64()? as f32, arr[1].as_f64()? as f32, arr[2].as_f64()? as f32])
+        } else {
+            None
+        }
+    });
+    let screen = args.get("screen").and_then(|v| {
+        let arr = v.as_array()?;
+        if arr.len() == 3 {
+            Some([arr[0].as_f64()? as f32, arr[1].as_f64()? as f32, arr[2].as_f64()? as f32])
+        } else {
+            None
+        }
+    });
+    let mut session = session.lock().await;
+    match session.with_model_mut(&id, |m| {
+        let runtime = m.model.runtime_mut();
+        let mut any_set = false;
+        if let Some(color) = multiply {
+            any_set |= runtime.set_drawable_multiply_color(&drawable_id, color);
+        }
+        if let Some(color) = screen {
+            any_set |= runtime.set_drawable_screen_color(&drawable_id, color);
+        }
+        if any_set {
+            success(r#"{"success": true}"#)
+        } else if multiply.is_none() && screen.is_none() {
+            tool_error("provide 'multiply' and/or 'screen' color arrays")
+        } else {
+            tool_error(format!("drawable not found: {drawable_id}"))
+        }
+    }) {
+        Ok(result) => result,
+        Err(e) => tool_error(e.to_string()),
+    }
 }
 
 pub async fn handle_play_motion(
-    _session: &Arc<Mutex<ModelSession>>,
-    _args: JsonObject,
+    session: &Arc<Mutex<ModelSession>>,
+    args: JsonObject,
 ) -> ToolResult {
-    tool_error("not yet implemented")
+    let id = get_string(&args, "model_id")?;
+    let path = get_string(&args, "path")?;
+    let priority = args.get("priority").and_then(|v| v.as_str()).unwrap_or("normal");
+    let group = args.get("group").and_then(|v| v.as_str()).unwrap_or("");
+    let mut session = session.lock().await;
+    match session.with_model_mut(&id, |m| {
+        let full_path = m.base_path.join(&path);
+        match crate::motion::load_motion(&full_path) {
+            Ok(motion) => {
+                let pri = match priority {
+                    "idle" => crate::motion::MotionPriority::Idle,
+                    "force" => crate::motion::MotionPriority::Force,
+                    _ => crate::motion::MotionPriority::Normal,
+                };
+                m.motion_manager.start_motion(motion, pri, group);
+                let count = m.motion_manager.active_count();
+                success(format!(r#"{{"success": true, "active_count": {count}}}"#))
+            }
+            Err(e) => tool_error(format!("failed to load motion: {e}")),
+        }
+    }) {
+        Ok(result) => result,
+        Err(e) => tool_error(e.to_string()),
+    }
 }
 
 pub async fn handle_stop_motions(
-    _session: &Arc<Mutex<ModelSession>>,
-    _args: JsonObject,
+    session: &Arc<Mutex<ModelSession>>,
+    args: JsonObject,
 ) -> ToolResult {
-    tool_error("not yet implemented")
+    let id = get_string(&args, "model_id")?;
+    let mut session = session.lock().await;
+    match session.with_model_mut(&id, |m| {
+        m.motion_manager.stop_all();
+        success(r#"{"success": true}"#)
+    }) {
+        Ok(result) => result,
+        Err(e) => tool_error(e.to_string()),
+    }
 }
 
 pub async fn handle_play_expression(
-    _session: &Arc<Mutex<ModelSession>>,
-    _args: JsonObject,
+    session: &Arc<Mutex<ModelSession>>,
+    args: JsonObject,
 ) -> ToolResult {
-    tool_error("not yet implemented")
+    let id = get_string(&args, "model_id")?;
+    let path = get_string(&args, "path")?;
+    let mut session = session.lock().await;
+    match session.with_model_mut(&id, |m| {
+        let full_path = m.base_path.join(&path);
+        match crate::expression::load_expression(&full_path) {
+            Ok(expr) => {
+                m.expression_manager.play(expr);
+                success(r#"{"success": true}"#)
+            }
+            Err(e) => tool_error(format!("failed to load expression: {e}")),
+        }
+    }) {
+        Ok(result) => result,
+        Err(e) => tool_error(e.to_string()),
+    }
 }
 
 pub async fn handle_stop_expressions(
-    _session: &Arc<Mutex<ModelSession>>,
-    _args: JsonObject,
+    session: &Arc<Mutex<ModelSession>>,
+    args: JsonObject,
 ) -> ToolResult {
-    tool_error("not yet implemented")
+    let id = get_string(&args, "model_id")?;
+    let mut session = session.lock().await;
+    match session.with_model_mut(&id, |m| {
+        m.expression_manager.stop_all();
+        success(r#"{"success": true}"#)
+    }) {
+        Ok(result) => result,
+        Err(e) => tool_error(e.to_string()),
+    }
 }
 
 pub async fn handle_configure_eye_blink(
