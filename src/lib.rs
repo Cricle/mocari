@@ -56,6 +56,9 @@ pub mod render;
 pub mod auto;
 /// Mutable model state used for parameter edits, pose updates, and mesh output.
 pub mod runtime;
+/// MCP (Model Context Protocol) server for controlling Live2D models.
+#[cfg(feature = "mcp")]
+pub mod mcp;
 
 pub use crate::auto::{Breath, BreathConfig, EyeBlink, EyeBlinkConfig, LipSync, LipSyncConfig, MouseTracker, MouseTrackerConfig};
 pub use crate::core::{DrawableId, Id, ParameterId, PartId};
