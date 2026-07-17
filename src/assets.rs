@@ -12,7 +12,7 @@ use std::{
 };
 
 use crate::{
-    json::{Model3, Physics3, Pose3},
+    json::{Model3, Physics3, Pose3, UserData3},
     moc3::{
         Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3CanvasInfo, Moc3Deformers, Moc3DrawOrderGroups,
         Moc3DrawableMesh, Moc3Glues, Moc3Ids, Moc3KeyformBindings, Moc3OffscreenInfo, Moc3Parts,
@@ -202,6 +202,7 @@ struct ParsedModel {
     draw_order_groups: Option<Moc3DrawOrderGroups>,
     physics: Option<Physics3>,
     pose: Option<Pose3>,
+    user_data: Option<UserData3>,
     textures: Vec<DecodedTexture>,
 }
 
@@ -254,6 +255,9 @@ impl ParsedModel {
         if let Some(physics) = self.physics {
             runtime.set_physics(physics);
         }
+        if let Some(user_data) = self.user_data {
+            runtime.set_user_data(user_data);
+        }
 
         Ok(RuntimeModel {
             runtime,
@@ -297,6 +301,13 @@ fn parse_model(path: impl AsRef<Path>) -> Result<ParsedModel, AssetLoadError> {
         }
         None => None,
     };
+    let user_data = match model.user_data() {
+        Some(user_data_file) => {
+            let user_data_source = read_text(&model_dir.join(user_data_file))?;
+            Some(UserData3::from_json_str(&user_data_source).map_err(AssetLoadError::Json)?)
+        }
+        None => None,
+    };
     let textures = decode_textures(model_dir, model.textures())?;
 
     Ok(ParsedModel {
@@ -313,6 +324,7 @@ fn parse_model(path: impl AsRef<Path>) -> Result<ParsedModel, AssetLoadError> {
         draw_order_groups,
         physics,
         pose,
+        user_data,
         textures,
     })
 }

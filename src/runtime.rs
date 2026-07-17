@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use crate::{
     core::{PhysicsOptions, PhysicsRuntime, clamp_parameter_value, draw_order_from_raw},
-    json::{Model3, Physics3, Pose3, copy_pose_link_opacities, update_pose_group_opacities},
+    json::{Model3, Physics3, Pose3, UserData3, UserDataTarget, copy_pose_link_opacities, update_pose_group_opacities},
     moc3::{
         Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3CanvasInfo, Moc3Deformers, Moc3DrawOrderGroups,
         Moc3DrawableMesh, Moc3DrawableVertex, Moc3Glues, Moc3Ids, Moc3KeyformBindings,
@@ -138,6 +138,7 @@ pub struct ModelRuntime {
     meshes: Vec<Moc3DrawableMesh>,
     mesh_update_scratch: Moc3MeshUpdateScratch,
     drawable_visible: Vec<bool>,
+    user_data: Option<UserData3>,
 }
 
 impl ModelRuntime {
@@ -204,6 +205,7 @@ impl ModelRuntime {
             meshes: Vec::new(),
             mesh_update_scratch: Moc3MeshUpdateScratch::default(),
             drawable_visible: vec![true; drawable_count],
+            user_data: None,
         };
         runtime.update_meshes()?;
         Some(runtime)
@@ -475,6 +477,21 @@ impl ModelRuntime {
     pub fn reset_parameters(&mut self) {
         self.parameter_values
             .copy_from_slice(self.bindings.parameter_default_values());
+    }
+
+    /// Returns the user data loaded from `userdata3.json`, if any.
+    pub fn user_data(&self) -> Option<&UserData3> {
+        self.user_data.as_ref()
+    }
+
+    /// Finds a user data value by target type and element id.
+    pub fn find_user_data(&self, target: &UserDataTarget, id: &str) -> Option<&str> {
+        self.user_data.as_ref().and_then(|data| data.find(target, id))
+    }
+
+    /// Sets user data on the runtime.
+    pub fn set_user_data(&mut self, data: UserData3) {
+        self.user_data = Some(data);
     }
 
     pub fn set_physics(&mut self, physics: Physics3) {

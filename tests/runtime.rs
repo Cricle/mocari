@@ -1,9 +1,35 @@
 use mocari::{
     assets::{load_model, load_model_runtime},
     expression::{ExpressionManager, ExpressionPlayer, load_expression},
-    json::{Expression3, Motion3},
+    json::{Expression3, Motion3, UserDataTarget},
     motion::{MotionManager, MotionPlayer, MotionPriority},
 };
+
+#[test]
+fn runtime_exposes_user_data_when_present() {
+    // Mao doesn't have userdata, so user_data should be None
+    let model = load_model_runtime("assets/models/Mao/Mao.model3.json").unwrap();
+    assert!(model.runtime().user_data().is_none());
+}
+
+#[test]
+fn find_user_data_returns_none_when_no_data() {
+    let model = load_model_runtime("assets/models/Mao/Mao.model3.json").unwrap();
+    assert!(model.runtime().find_user_data(&UserDataTarget::Parameter, "ParamAngleX").is_none());
+}
+
+#[test]
+fn runtime_loads_user_data_for_hiyori() {
+    let model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+    let data = model.runtime().user_data().expect("Hiyori has userdata");
+    assert_eq!(data.version(), 3);
+    assert_eq!(data.entries().len(), 7);
+    // "ArtMesh" targets fall through to Parameter in the current parser
+    assert_eq!(
+        model.runtime().find_user_data(&UserDataTarget::Parameter, "ArtMesh93"),
+        Some("ribon"),
+    );
+}
 
 #[test]
 fn runtime_default_pose_matches_default_model() {
@@ -833,6 +859,57 @@ fn assert_close_mouse(actual: f32, expected: f32) {
         (actual - expected).abs() < 0.01,
         "actual {actual}, expected {expected}"
     );
+}
+
+// ── Integration: all features together ──────────────────────────────────────
+
+#[test]
+fn all_features_work_together() {
+    use mocari::{EyeBlink, LipSync, Breath, MouseTracker, MotionManager};
+
+    let mut model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+    let runtime = model.runtime_mut();
+
+    // Create all auto-animation features
+    let mut blink = EyeBlink::with_defaults();
+    let mut lip = LipSync::with_defaults();
+    let mut breath = Breath::with_defaults();
+    let mut tracker = MouseTracker::with_defaults();
+    let mut motion_mgr = MotionManager::new();
+
+    // Set up inputs
+    lip.set_amplitude(0.5);
+    tracker.set_target(0.5, -0.3);
+
+    // Simulate a few frames
+    let delta = 1.0 / 60.0;
+    for _ in 0..10 {
+        runtime.reset_parameters();
+        runtime.reset_part_opacities();
+
+        blink.tick(delta);
+        blink.apply(runtime);
+        lip.tick(delta);
+        lip.apply(runtime);
+        breath.tick(delta);
+        breath.apply(runtime);
+        tracker.tick(delta);
+        tracker.apply(runtime);
+        motion_mgr.tick(delta);
+        motion_mgr.apply(runtime);
+
+        runtime.apply_physics(delta);
+        runtime.update_meshes().unwrap();
+    }
+
+    // Verify meshes are valid
+    assert!(!runtime.meshes().is_empty(), "should have meshes after all features");
+    for mesh in runtime.meshes() {
+        for vertex in mesh.vertices() {
+            let [x, y] = vertex.position();
+            assert!(x.is_finite() && y.is_finite(), "vertex positions must be finite");
+        }
+    }
 }
 
 // ── MotionManager tests ────────────────────────────────────────────────────
