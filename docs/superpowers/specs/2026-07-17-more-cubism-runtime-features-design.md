@@ -66,7 +66,7 @@ impl EyeBlink {
 
 ### LipSync
 
-Audio-driven mouth movement. The user provides amplitude values from external audio analysis; LipSync smooths and applies them.
+Audio-driven mouth movement. The user provides amplitude values from external audio analysis; LipSync smooths and applies them. Input amplitude is clamped to `0.0..=1.0`.
 
 **Configuration (`LipSyncConfig`):**
 - `smoothing: f32` - exponential smoothing factor (default 0.2)
@@ -126,6 +126,8 @@ Face follows cursor position with smooth interpolation.
 - `ParamBodyAngleX` - body rotation
 - `ParamEyeBallX`, `ParamEyeBallY` - eye direction
 
+**Coordinate space:** `set_target(x, y)` takes normalized values in `-1.0..=1.0` where `(0, 0)` is center, `(-1, -1)` is bottom-left, `(1, 1)` is top-right. The caller is responsible for converting from window coordinates to this normalized space.
+
 **API:**
 ```rust
 pub struct MouseTracker { /* state */ }
@@ -150,7 +152,7 @@ Priority-based motion queue with crossfade blending.
 - **Priority levels:** `Idle(0)`, `Normal(1)`, `Force(2)`
 - **Crossfade:** configurable fade duration when switching motions
 - **Group semantics:** same-group motions replace each other; different-group motions can play simultaneously
-- **Queue:** Normal-priority motions queue and play when the current motion finishes
+- **Queue:** Normal-priority motions queue (FIFO) and play when the current motion finishes
 
 ### API
 
