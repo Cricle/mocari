@@ -1,5 +1,7 @@
 use crate::runtime::ModelRuntime;
 
+const PARAM_MOUTH_OPEN_Y: &str = "ParamMouthOpenY";
+
 /// Configuration for audio-driven lip sync.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LipSyncConfig {
@@ -19,6 +21,10 @@ impl Default for LipSyncConfig {
 }
 
 /// Audio-driven mouth movement.
+///
+/// The caller provides amplitude values from external audio analysis via
+/// [`set_amplitude`](Self::set_amplitude). LipSync applies exponential
+/// smoothing and writes to `ParamMouthOpenY`.
 #[derive(Debug, Clone)]
 pub struct LipSync {
     config: LipSyncConfig,
@@ -47,13 +53,24 @@ impl LipSync {
     }
 
     /// Advances smoothing by `delta_seconds`.
-    pub fn tick(&mut self, _delta_seconds: f32) {
-        // TODO: Task 3
+    pub fn tick(&mut self, delta_seconds: f32) {
+        let dt = delta_seconds.max(0.0);
+        let factor = 1.0 - (-dt / self.config.smoothing.max(0.001)).exp();
+        self.current_amplitude += (self.target_amplitude - self.current_amplitude) * factor;
     }
 
     /// Applies current mouth values to the runtime.
-    pub fn apply(&self, _runtime: &mut ModelRuntime) {
-        // TODO: Task 3
+    pub fn apply(&self, runtime: &mut ModelRuntime) {
+        let weight = self.config.weight;
+        if weight <= 0.0 {
+            return;
+        }
+
+        if let Some(current) = runtime.parameter_value(PARAM_MOUTH_OPEN_Y) {
+            let value = self.current_amplitude;
+            let blended = current + (value - current) * weight;
+            runtime.set_parameter(PARAM_MOUTH_OPEN_Y, blended);
+        }
     }
 
     /// Resets amplitude to zero.

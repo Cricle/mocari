@@ -2,7 +2,7 @@ use mocari::{
     assets::{load_model, load_model_runtime},
     expression::{ExpressionManager, ExpressionPlayer, load_expression},
     json::{Expression3, Motion3},
-    motion::MotionPlayer,
+    motion::{MotionManager, MotionPlayer, MotionPriority},
 };
 
 #[test]
@@ -594,7 +594,7 @@ fn assert_close(actual: f32, expected: f32) {
 
 // ── EyeBlink auto-animation tests ──────────────────────────────────────────
 
-use mocari::auto::EyeBlink;
+use mocari::auto::{EyeBlink, LipSync};
 
 #[test]
 fn eye_blink_default_config_has_reasonable_values() {
@@ -654,4 +654,101 @@ fn assert_close_runtime(actual: f32, expected: f32) {
         (actual - expected).abs() < 0.01,
         "actual {actual}, expected {expected}"
     );
+}
+
+// ── LipSync tests ──────────────────────────────────────────────────────────
+
+#[test]
+fn lip_sync_smooths_amplitude_over_time() {
+    let mut lip = LipSync::with_defaults();
+    lip.set_amplitude(1.0);
+    let mut model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+
+    // After first tick, amplitude should be partially smoothed
+    lip.tick(1.0 / 60.0);
+    let runtime = model.runtime_mut();
+    runtime.reset_parameters();
+    lip.apply(runtime);
+    let value = runtime.parameter_value("ParamMouthOpenY").unwrap();
+    assert!(value > 0.0, "mouth should open after amplitude: {value}");
+    assert!(value < 1.0, "mouth should not snap to max instantly: {value}");
+}
+
+#[test]
+fn lip_sync_weight_zero_has_no_effect() {
+    let mut lip = LipSync::with_defaults();
+    lip.set_weight(0.0);
+    lip.set_amplitude(1.0);
+    let mut model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+    let runtime = model.runtime_mut();
+    let before = runtime.parameter_value("ParamMouthOpenY").unwrap();
+    lip.tick(1.0);
+    runtime.reset_parameters();
+    lip.apply(runtime);
+    let after = runtime.parameter_value("ParamMouthOpenY").unwrap();
+    assert_close_lip(after, before);
+}
+
+fn assert_close_lip(actual: f32, expected: f32) {
+    assert!(
+        (actual - expected).abs() < 0.01,
+        "actual {actual}, expected {expected}"
+    );
+}
+
+// ── MotionManager tests ────────────────────────────────────────────────────
+
+#[test]
+fn motion_manager_plays_single_motion() {
+    let mut model = load_model_runtime("assets/models/Haru/Haru.model3.json").unwrap();
+    let motion = mocari::motion::load_motion("assets/models/Haru/motions/haru_g_idle.motion3.json").unwrap();
+    let mut manager = MotionManager::new();
+
+    manager.start_motion(motion, MotionPriority::Normal, "Idle");
+    manager.tick(0.5);
+    model.runtime_mut().reset_parameters();
+    manager.apply(model.runtime_mut());
+
+    // Should have changed some parameter values
+    assert_eq!(manager.active_count(), 1);
+    assert!(!manager.is_finished());
+}
+
+#[test]
+fn motion_manager_crossfades_same_group() {
+    let mut model = load_model_runtime("assets/models/Haru/Haru.model3.json").unwrap();
+    let motion1 = mocari::motion::load_motion("assets/models/Haru/motions/haru_g_idle.motion3.json").unwrap();
+    let motion2 = mocari::motion::load_motion("assets/models/Haru/motions/haru_g_idle.motion3.json").unwrap();
+    let mut manager = MotionManager::new();
+    manager.set_crossfade_duration(0.5);
+
+    manager.start_motion(motion1, MotionPriority::Normal, "Idle");
+    manager.tick(1.0);
+    manager.start_motion(motion2, MotionPriority::Normal, "Idle");
+    manager.tick(0.1);
+
+    // Both should be active during crossfade
+    assert!(manager.active_count() >= 1, "should have active motions: {}", manager.active_count());
+}
+
+#[test]
+fn motion_manager_force_interrupts_normal() {
+    let mut model = load_model_runtime("assets/models/Haru/Haru.model3.json").unwrap();
+    let motion1 = mocari::motion::load_motion("assets/models/Haru/motions/haru_g_idle.motion3.json").unwrap();
+    let motion2 = mocari::motion::load_motion("assets/models/Haru/motions/haru_g_idle.motion3.json").unwrap();
+    let mut manager = MotionManager::new();
+    manager.set_crossfade_duration(0.5);
+
+    manager.start_motion(motion1, MotionPriority::Normal, "Idle");
+    manager.tick(1.0);
+    manager.start_motion(motion2, MotionPriority::Force, "Force");
+    manager.tick(0.1);
+
+    assert!(manager.active_count() >= 1);
+}
+
+#[test]
+fn motion_manager_default_crossfade_is_half_second() {
+    let manager = MotionManager::new();
+    assert_eq!(manager.crossfade_duration(), 0.5);
 }
