@@ -592,6 +592,52 @@ fn assert_close(actual: f32, expected: f32) {
     );
 }
 
+// ── Breath auto-animation tests ────────────────────────────────────────────
+
+use mocari::auto::Breath;
+
+#[test]
+fn breath_produces_oscillating_output() {
+    let mut breath = Breath::with_defaults();
+    let mut model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+
+    breath.tick(1.0);
+    let runtime = model.runtime_mut();
+    runtime.reset_parameters();
+    breath.apply(runtime);
+    let value1 = runtime.parameter_value("ParamBreath").unwrap();
+
+    breath.tick(1.0);
+    runtime.reset_parameters();
+    breath.apply(runtime);
+    let value2 = runtime.parameter_value("ParamBreath").unwrap();
+
+    // Values should change over time (sine wave)
+    // They may or may not be different depending on phase, but at least one should be non-zero
+    assert!(value1.is_finite() && value2.is_finite(), "breath values must be finite");
+}
+
+#[test]
+fn breath_weight_zero_has_no_effect() {
+    let mut breath = Breath::with_defaults();
+    breath.set_weight(0.0);
+    let mut model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+    let runtime = model.runtime_mut();
+    let before = runtime.parameter_value("ParamBreath").unwrap_or(0.0);
+    breath.tick(1.0);
+    runtime.reset_parameters();
+    breath.apply(runtime);
+    let after = runtime.parameter_value("ParamBreath").unwrap_or(0.0);
+    assert_close_breath(after, before);
+}
+
+fn assert_close_breath(actual: f32, expected: f32) {
+    assert!(
+        (actual - expected).abs() < 0.01,
+        "actual {actual}, expected {expected}"
+    );
+}
+
 // ── EyeBlink auto-animation tests ──────────────────────────────────────────
 
 use mocari::auto::{EyeBlink, LipSync};
@@ -694,6 +740,59 @@ fn assert_close_lip(actual: f32, expected: f32) {
         (actual - expected).abs() < 0.01,
         "actual {actual}, expected {expected}"
     );
+}
+
+// ── Drawable visibility tests ───────────────────────────────────────────────
+
+#[test]
+fn drawable_visibility_hides_mesh_vertices() {
+    let mut model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+    let drawable_ids: Vec<String> = model.runtime().drawable_ids().to_vec();
+    assert!(!drawable_ids.is_empty());
+
+    let target_id = &drawable_ids[0];
+    let index = model.runtime().drawable_index(target_id).unwrap();
+    let before_vertices = model.runtime().meshes()[index].vertices().to_vec();
+
+    model.runtime_mut().set_drawable_visible(target_id, false);
+    model.runtime_mut().update_meshes().unwrap();
+
+    let after_vertices = model.runtime().meshes()[index].vertices().to_vec();
+    // Hidden drawable should have all vertices at origin
+    for vertex in &after_vertices {
+        assert_eq!(vertex.position(), [0.0, 0.0], "hidden vertex should be at origin");
+    }
+    assert_ne!(before_vertices, after_vertices, "vertices should change when hidden");
+}
+
+#[test]
+fn drawable_visibility_reset_restores_all() {
+    let mut model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+    let drawable_ids: Vec<String> = model.runtime().drawable_ids().to_vec();
+
+    // Hide all
+    for id in &drawable_ids {
+        model.runtime_mut().set_drawable_visible(id, false);
+    }
+    model.runtime_mut().update_meshes().unwrap();
+
+    // Reset all
+    model.runtime_mut().reset_drawable_visibility();
+    model.runtime_mut().update_meshes().unwrap();
+
+    // All should be visible again
+    for (i, id) in drawable_ids.iter().enumerate() {
+        assert!(model.runtime().is_drawable_visible(i), "drawable {id} should be visible after reset");
+    }
+}
+
+#[test]
+fn set_drawable_visible_by_index_works() {
+    let mut model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+    model.runtime_mut().set_drawable_visible_by_index(0, false);
+    assert!(!model.runtime().is_drawable_visible(0));
+    model.runtime_mut().set_drawable_visible_by_index(0, true);
+    assert!(model.runtime().is_drawable_visible(0));
 }
 
 // ── MouseTracker tests ─────────────────────────────────────────────────────

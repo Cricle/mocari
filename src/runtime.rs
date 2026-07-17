@@ -12,8 +12,8 @@ use crate::{
     json::{Model3, Physics3, Pose3, copy_pose_link_opacities, update_pose_group_opacities},
     moc3::{
         Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3CanvasInfo, Moc3Deformers, Moc3DrawOrderGroups,
-        Moc3DrawableMesh, Moc3Glues, Moc3Ids, Moc3KeyformBindings, Moc3MeshUpdateScratch,
-        Moc3OffscreenInfo, Moc3Parts,
+        Moc3DrawableMesh, Moc3DrawableVertex, Moc3Glues, Moc3Ids, Moc3KeyformBindings,
+        Moc3MeshUpdateScratch, Moc3OffscreenInfo, Moc3Parts,
         build_moc3_drawable_meshes_with_parameters_offscreen_and_part_opacities,
         update_moc3_drawable_meshes_with_parameters_offscreen_and_part_opacities,
     },
@@ -137,6 +137,7 @@ pub struct ModelRuntime {
     pose_opacities: Vec<f32>,
     meshes: Vec<Moc3DrawableMesh>,
     mesh_update_scratch: Moc3MeshUpdateScratch,
+    drawable_visible: Vec<bool>,
 }
 
 impl ModelRuntime {
@@ -162,6 +163,7 @@ impl ModelRuntime {
         let parameter_values = bindings.parameter_default_values().to_vec();
         let parameter_overrides = vec![None; parameter_values.len()];
         let drawable_index = build_index(ids.art_meshes());
+        let drawable_count = ids.art_meshes().len();
         let parameter_index = build_index(ids.parameters());
         let part_index = build_index(ids.parts());
         let part_count = parts.part_count();
@@ -201,6 +203,7 @@ impl ModelRuntime {
             pose_opacities,
             meshes: Vec::new(),
             mesh_update_scratch: Moc3MeshUpdateScratch::default(),
+            drawable_visible: vec![true; drawable_count],
         };
         runtime.update_meshes()?;
         Some(runtime)
@@ -667,7 +670,9 @@ impl ModelRuntime {
         self.update_part_opacities();
         let drawable_part_opacities = self.drawable_part_opacities();
         self.rebuild_or_update_meshes(&drawable_part_opacities)?;
-        self.apply_mesh_post_processing()
+        self.apply_mesh_post_processing()?;
+        self.apply_drawable_visibility();
+        Some(())
     }
 
     fn rebuild_or_update_meshes(&mut self, drawable_part_opacities: &[f32]) -> Option<()> {
@@ -706,6 +711,16 @@ impl ModelRuntime {
         Some(())
     }
 
+    fn apply_drawable_visibility(&mut self) {
+        for (index, mesh) in self.meshes.iter_mut().enumerate() {
+            if !self.drawable_visible.get(index).copied().unwrap_or(true) {
+                for vertex in mesh.vertices_mut() {
+                    *vertex = Moc3DrawableVertex::new([0.0, 0.0], vertex.uv());
+                }
+            }
+        }
+    }
+
     fn apply_group_render_orders(&mut self) {
         let Some(groups) = self.draw_order_groups.as_ref() else {
             return;
@@ -741,6 +756,36 @@ impl ModelRuntime {
         for (mesh, render_order) in self.meshes.iter_mut().zip(&render_orders) {
             mesh.set_render_order(*render_order);
         }
+    }
+
+    /// Sets whether a drawable is visible by id.
+    ///
+    /// Hidden drawables produce zero-area meshes. Returns `false` when the id is
+    /// not present in the model.
+    pub fn set_drawable_visible(&mut self, id: &str, visible: bool) -> bool {
+        match self.drawable_index(id) {
+            Some(index) => self.set_drawable_visible_by_index(index, visible),
+            None => false,
+        }
+    }
+
+    /// Sets whether a drawable is visible by index.
+    pub fn set_drawable_visible_by_index(&mut self, index: usize, visible: bool) -> bool {
+        let Some(slot) = self.drawable_visible.get_mut(index) else {
+            return false;
+        };
+        *slot = visible;
+        true
+    }
+
+    /// Returns whether a drawable is currently visible.
+    pub fn is_drawable_visible(&self, index: usize) -> bool {
+        self.drawable_visible.get(index).copied().unwrap_or(true)
+    }
+
+    /// Resets all drawables to visible.
+    pub fn reset_drawable_visibility(&mut self) {
+        self.drawable_visible.fill(true);
     }
 
     /// Returns the current drawable meshes in model order.
