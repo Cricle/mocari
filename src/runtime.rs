@@ -902,6 +902,11 @@ impl ModelRuntime {
         &self.meshes
     }
 
+    /// Returns mutable access to drawable meshes.
+    pub(crate) fn meshes_mut(&mut self) -> &mut [Moc3DrawableMesh] {
+        &mut self.meshes
+    }
+
     fn parameter_range_by_index(&self, index: usize) -> Option<(f32, f32)> {
         Some((
             self.parameter_minimum_by_index(index)?,

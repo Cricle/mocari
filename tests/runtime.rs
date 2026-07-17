@@ -982,6 +982,46 @@ fn all_features_work_together() {
     }
 }
 
+// ── Motion Drawable curve tests ────────────────────────────────────────────
+
+#[test]
+fn motion_drawable_opacity_curve() {
+    let mut model = load_model_runtime("assets/models/Hiyori/Hiyori.model3.json").unwrap();
+    let runtime = model.runtime_mut();
+    let drawable_id = runtime.drawable_ids()[0].clone();
+    let drawable_index = runtime.drawable_index(&drawable_id).unwrap();
+
+    // Create a motion that targets drawable opacity
+    let json = format!(r#"{{
+        "Version": 3,
+        "Meta": {{"Duration": 1.0, "Fps": 30.0, "Loop": false, "CurveCount": 1, "TotalSegmentCount": 1, "TotalPointCount": 2}},
+        "Curves": [{{
+            "Target": "Drawable",
+            "Id": "{}.Opacity",
+            "Segments": [0.0, 1.0, 0, 1.0, 0.0]
+        }}]
+    }}"#, drawable_id);
+
+    let motion = Motion3::from_json_str(&json).unwrap();
+    let mut player = MotionPlayer::new_once(motion);
+
+    // Initial opacity (set during last update_meshes)
+    let initial_opacity = runtime.meshes()[drawable_index].opacity();
+    assert!(initial_opacity > 0.0, "initial opacity should be nonzero");
+
+    // Tick to end and apply — the motion writes directly to the mesh.
+    // Note: we do NOT call update_meshes() after apply because that rebuilds
+    // meshes from moc3 data, overwriting the motion-set value.
+    player.tick(1.0);
+    player.apply(runtime);
+
+    let applied_opacity = runtime.meshes()[drawable_index].opacity();
+    assert!(
+        (applied_opacity - 0.0).abs() < 0.01,
+        "drawable opacity should be near 0.0 after motion, got {applied_opacity}"
+    );
+}
+
 // ── MotionManager tests ────────────────────────────────────────────────────
 
 #[test]
