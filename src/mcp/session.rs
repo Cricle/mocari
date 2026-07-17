@@ -8,7 +8,7 @@ use crate::expression::ExpressionManager;
 use crate::motion::MotionManager;
 
 /// A loaded Live2D model with its runtime state and auto-animation systems.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LoadedModel {
     /// The loaded model with runtime state and textures.
     pub model: RuntimeModel,
@@ -29,7 +29,7 @@ pub struct LoadedModel {
 }
 
 /// Errors returned by [`ModelSession`] operations.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SessionError {
     /// No model with the given ID exists in the session.
     ModelNotFound(String),
@@ -56,7 +56,7 @@ impl std::error::Error for SessionError {}
 /// Each model is assigned a string ID (`model_1`, `model_2`, ...) on load.
 /// Use [`with_model`](Self::with_model) / [`with_model_mut`](Self::with_model_mut)
 /// to access a model's state by ID.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ModelSession {
     /// Map from model ID to loaded model. Public so MCP tool handlers can access directly.
     pub models: HashMap<String, LoadedModel>,
