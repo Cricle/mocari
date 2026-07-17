@@ -298,16 +298,11 @@ impl MotionManager {
             }
         }
 
-        // Remove finished motions
-        self.players.retain(|m| !m.player.is_finished() && m.fade_in_remaining > -0.1);
-
-        // Remove motions that have fully faded out
+        // Remove finished motions and motions that have fully faded out
         self.players.retain(|m| {
-            if m.fading_out && m.player.weight() <= 0.01 {
-                false
-            } else {
-                true
-            }
+            !m.player.is_finished()
+                && m.fade_in_remaining > -0.1
+                && !(m.fading_out && m.player.weight() <= 0.01)
         });
 
         // Process queue: start queued motions if slots are available
@@ -331,11 +326,12 @@ impl MotionManager {
     }
 
     /// Stops all motions with a fade-out.
-    pub fn stop_all_with_fade(&mut self, _fade_seconds: f32) {
+    pub fn stop_all_with_fade(&mut self, fade_seconds: f32) {
+        let fade = fade_seconds.max(0.0);
         for player in &mut self.players {
             if !player.fading_out {
                 player.fading_out = true;
-                player.fade_in_remaining = self.crossfade_duration;
+                player.fade_in_remaining = fade;
             }
         }
         self.queue.clear();

@@ -19,7 +19,7 @@ impl UserDataTarget {
     fn from_raw(raw: &str) -> Self {
         match raw {
             "Part" => Self::Part,
-            "Drawable" => Self::Drawable,
+            "ArtMesh" | "Drawable" => Self::Drawable,
             _ => Self::Parameter,
         }
     }

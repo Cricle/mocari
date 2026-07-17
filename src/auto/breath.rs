@@ -46,6 +46,7 @@ impl Breath {
     pub fn tick(&mut self, delta_seconds: f32) {
         let dt = delta_seconds.max(0.0);
         self.phase += dt * self.config.cycle_speed * TAU;
+        self.phase %= TAU;
     }
 
     /// Applies current breath values to the runtime.

@@ -24,9 +24,9 @@ fn runtime_loads_user_data_for_hiyori() {
     let data = model.runtime().user_data().expect("Hiyori has userdata");
     assert_eq!(data.version(), 3);
     assert_eq!(data.entries().len(), 7);
-    // "ArtMesh" targets fall through to Parameter in the current parser
+    // "ArtMesh" targets map to Drawable
     assert_eq!(
-        model.runtime().find_user_data(&UserDataTarget::Parameter, "ArtMesh93"),
+        model.runtime().find_user_data(&UserDataTarget::Drawable, "ArtMesh93"),
         Some("ribon"),
     );
 }
@@ -612,9 +612,13 @@ fn assert_color_close(actual: [f32; 3], expected: [f32; 3]) {
 }
 
 fn assert_close(actual: f32, expected: f32) {
+    assert_close_within(actual, expected, 0.0001);
+}
+
+fn assert_close_within(actual: f32, expected: f32, tolerance: f32) {
     assert!(
-        (actual - expected).abs() < 0.0001,
-        "actual {actual}, expected {expected}"
+        (actual - expected).abs() < tolerance,
+        "actual {actual}, expected {expected}, tolerance {tolerance}"
     );
 }
 
@@ -654,15 +658,9 @@ fn breath_weight_zero_has_no_effect() {
     runtime.reset_parameters();
     breath.apply(runtime);
     let after = runtime.parameter_value("ParamBreath").unwrap_or(0.0);
-    assert_close_breath(after, before);
+    assert_close_within(after, before, 0.01);
 }
 
-fn assert_close_breath(actual: f32, expected: f32) {
-    assert!(
-        (actual - expected).abs() < 0.01,
-        "actual {actual}, expected {expected}"
-    );
-}
 
 // ── EyeBlink auto-animation tests ──────────────────────────────────────────
 
@@ -718,15 +716,9 @@ fn eye_blink_weight_zero_has_no_effect() {
     blink.tick(0.5);
     blink.apply(runtime);
     let after = runtime.parameter_value("ParamEyeLOpen").unwrap();
-    assert_close_runtime(after, before);
+    assert_close_within(after, before, 0.01);
 }
 
-fn assert_close_runtime(actual: f32, expected: f32) {
-    assert!(
-        (actual - expected).abs() < 0.01,
-        "actual {actual}, expected {expected}"
-    );
-}
 
 // ── LipSync tests ──────────────────────────────────────────────────────────
 
@@ -758,15 +750,9 @@ fn lip_sync_weight_zero_has_no_effect() {
     runtime.reset_parameters();
     lip.apply(runtime);
     let after = runtime.parameter_value("ParamMouthOpenY").unwrap();
-    assert_close_lip(after, before);
+    assert_close_within(after, before, 0.01);
 }
 
-fn assert_close_lip(actual: f32, expected: f32) {
-    assert!(
-        (actual - expected).abs() < 0.01,
-        "actual {actual}, expected {expected}"
-    );
-}
 
 // ── Drawable visibility tests ───────────────────────────────────────────────
 
@@ -851,15 +837,9 @@ fn mouse_tracker_weight_zero_has_no_effect() {
     runtime.reset_parameters();
     tracker.apply(runtime);
     let after = runtime.parameter_value("ParamAngleX").unwrap();
-    assert_close_mouse(after, before);
+    assert_close_within(after, before, 0.01);
 }
 
-fn assert_close_mouse(actual: f32, expected: f32) {
-    assert!(
-        (actual - expected).abs() < 0.01,
-        "actual {actual}, expected {expected}"
-    );
-}
 
 // ── Integration: all features together ──────────────────────────────────────
 
@@ -967,4 +947,82 @@ fn motion_manager_force_interrupts_normal() {
 fn motion_manager_default_crossfade_is_half_second() {
     let manager = MotionManager::new();
     assert_eq!(manager.crossfade_duration(), 0.5);
+}
+
+#[test]
+fn motion_manager_idle_priority() {
+    let motion1 = mocari::motion::load_motion("assets/models/Haru/motions/haru_g_idle.motion3.json").unwrap();
+    let motion2 = mocari::motion::load_motion("assets/models/Haru/motions/haru_g_idle.motion3.json").unwrap();
+    let mut manager = MotionManager::new();
+
+    // Start a normal motion
+    manager.start_motion(motion1, MotionPriority::Normal, "Idle");
+    manager.tick(0.1);
+    assert_eq!(manager.active_count(), 1);
+
+    // Idle should not start when normal motion is active
+    let count = manager.start_motion(motion2, MotionPriority::Idle, "Idle2");
+    assert_eq!(count, 1, "idle motion should not start when other motions are active");
+    assert_eq!(manager.active_count(), 1);
+}
+
+#[test]
+fn motion_manager_queue_drain() {
+    let motion1 = Motion3::from_json_str(
+        r#"{
+            "Version": 3,
+            "Meta": { "Duration": 0.5, "Fps": 30.0, "Loop": false },
+            "Curves": [
+                { "Target": "Parameter", "Id": "ParamAngleX", "Segments": [0.0, 0.0, 0, 0.5, 10.0] }
+            ]
+        }"#,
+    )
+    .unwrap();
+    let motion2 = Motion3::from_json_str(
+        r#"{
+            "Version": 3,
+            "Meta": { "Duration": 1.0, "Fps": 30.0, "Loop": false },
+            "Curves": [
+                { "Target": "Parameter", "Id": "ParamAngleX", "Segments": [0.0, 0.0, 0, 1.0, 10.0] }
+            ]
+        }"#,
+    )
+    .unwrap();
+    let mut manager = MotionManager::new();
+    manager.set_crossfade_duration(0.0);
+
+    // Start first normal motion
+    manager.start_motion(motion1, MotionPriority::Normal, "Group1");
+    // Queue second normal motion (same priority, different group)
+    manager.start_motion(motion2, MotionPriority::Normal, "Group2");
+    assert_eq!(manager.active_count(), 1, "only one motion should be active");
+
+    // Tick until first motion finishes
+    manager.tick(0.6);
+    // The finished motion should be removed and queued motion should start
+    assert_eq!(manager.active_count(), 1, "queued motion should have started after first finished");
+}
+
+#[test]
+fn motion_manager_group_replacement() {
+    let motion1 = mocari::motion::load_motion("assets/models/Haru/motions/haru_g_idle.motion3.json").unwrap();
+    let motion2 = mocari::motion::load_motion("assets/models/Haru/motions/haru_g_idle.motion3.json").unwrap();
+    let mut manager = MotionManager::new();
+    manager.set_crossfade_duration(0.5);
+
+    // Start first motion in group "Idle"
+    manager.start_motion(motion1, MotionPriority::Normal, "Idle");
+    manager.tick(0.1);
+    assert_eq!(manager.active_count(), 1);
+
+    // Start second motion in same group "Idle" - should crossfade
+    manager.start_motion(motion2, MotionPriority::Normal, "Idle");
+    manager.tick(0.1);
+
+    // Both should be active during crossfade (old fading out, new fading in)
+    assert_eq!(manager.active_count(), 2, "both motions should be active during crossfade");
+
+    // After crossfade completes, old should be removed
+    manager.tick(0.5);
+    assert_eq!(manager.active_count(), 1, "only new motion should remain after crossfade");
 }
