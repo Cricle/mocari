@@ -1,4 +1,8 @@
+use std::f32::consts::TAU;
+
 use crate::runtime::ModelRuntime;
+
+const PARAM_BREATH: &str = "ParamBreath";
 
 /// Configuration for breathing animation.
 #[derive(Debug, Clone, PartialEq)]
@@ -19,6 +23,8 @@ impl Default for BreathConfig {
 }
 
 /// Subtle breathing animation using a sine wave.
+///
+/// Oscillates `ParamBreath` using a sine wave at the configured cycle speed.
 #[derive(Debug, Clone)]
 pub struct Breath {
     config: BreathConfig,
@@ -37,13 +43,28 @@ impl Breath {
     }
 
     /// Advances the breath phase by `delta_seconds`.
-    pub fn tick(&mut self, _delta_seconds: f32) {
-        // TODO: Task 4
+    pub fn tick(&mut self, delta_seconds: f32) {
+        let dt = delta_seconds.max(0.0);
+        self.phase += dt * self.config.cycle_speed * TAU;
     }
 
     /// Applies current breath values to the runtime.
-    pub fn apply(&self, _runtime: &mut ModelRuntime) {
-        // TODO: Task 4
+    ///
+    /// The sine wave output is mapped from [-1, 1] to [0, 1] so the parameter
+    /// oscillates between its minimum and maximum.
+    pub fn apply(&self, runtime: &mut ModelRuntime) {
+        let weight = self.config.weight;
+        if weight <= 0.0 {
+            return;
+        }
+
+        // Map sine [-1, 1] to [0, 1]
+        let breath_value = (self.phase.sin() + 1.0) * 0.5;
+
+        if let Some(current) = runtime.parameter_value(PARAM_BREATH) {
+            let blended = current + (breath_value - current) * weight;
+            runtime.set_parameter(PARAM_BREATH, blended);
+        }
     }
 
     /// Resets the breath phase to zero.
