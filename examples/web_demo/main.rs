@@ -22,6 +22,7 @@ type SharedEngine = Arc<Mutex<Option<Live2dEngine>>>;
 struct WebApp {
     window: Option<Arc<winit::window::Window>>,
     engine: SharedEngine,
+    init_started: bool,
 }
 
 impl winit::application::ApplicationHandler for WebApp {
@@ -42,19 +43,6 @@ impl winit::application::ApplicationHandler for WebApp {
                 return;
             }
         };
-
-        let engine = self.engine.clone();
-        let window_clone = window.clone();
-        wasm_bindgen_futures::spawn_local(async move {
-            match Live2dEngine::new(window_clone).await {
-                Ok(e) => {
-                    *engine.lock().unwrap() = Some(e);
-                }
-                Err(e) => {
-                    web_sys::console::error_1(&format!("engine init failed: {e}").into());
-                }
-            }
-        });
 
         self.window = Some(window);
     }
@@ -84,6 +72,18 @@ impl winit::application::ApplicationHandler for WebApp {
     }
 
     fn about_to_wait(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
+        // Kick off async engine + model init once
+        if !self.init_started {
+            if let Some(window) = &self.window {
+                self.init_started = true;
+                let engine = self.engine.clone();
+                let window = window.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    init_engine(engine, window).await;
+                });
+            }
+        }
+
         let guard = self.engine.lock().unwrap();
         if let Some(engine) = guard.as_ref() {
             if engine.needs_continuous_redraw() {
@@ -93,4 +93,50 @@ impl winit::application::ApplicationHandler for WebApp {
             }
         }
     }
+}
+
+async fn init_engine(engine: SharedEngine, window: Arc<winit::window::Window>) {
+    use mocari::engine::web;
+
+    let mut e = match Live2dEngine::new(window.clone()).await {
+        Ok(e) => e,
+        Err(err) => {
+            web_sys::console::error_1(&format!("engine init failed: {err}").into());
+            return;
+        }
+    };
+
+    // Fetch model assets
+    let model_json = match web::fetch_text("/models/Ren/Ren.model3.json").await {
+        Ok(s) => s,
+        Err(err) => {
+            web_sys::console::error_1(&format!("fetch model json failed: {err}").into());
+            return;
+        }
+    };
+    let moc3 = match web::fetch_bytes("/models/Ren/Ren.moc3").await {
+        Ok(b) => b,
+        Err(err) => {
+            web_sys::console::error_1(&format!("fetch moc3 failed: {err}").into());
+            return;
+        }
+    };
+    let tex = match web::fetch_bytes("/models/Ren/Ren.2048/texture_00.png").await {
+        Ok(b) => b,
+        Err(err) => {
+            web_sys::console::error_1(&format!("fetch texture failed: {err}").into());
+            return;
+        }
+    };
+
+    let tex_ref: &[u8] = &tex;
+    let textures: Vec<&[u8]> = vec![tex_ref];
+    if let Err(err) = e.load_model_from_bytes(&model_json, &moc3, &textures) {
+        web_sys::console::error_1(&format!("load model failed: {err}").into());
+        return;
+    }
+
+    web_sys::console::log_1(&"model loaded!".into());
+    *engine.lock().unwrap() = Some(e);
+    window.request_redraw();
 }

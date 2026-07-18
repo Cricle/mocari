@@ -6,7 +6,7 @@ mod model;
 mod plugin;
 mod render;
 #[cfg(target_arch = "wasm32")]
-pub(crate) mod web;
+pub mod web;
 
 pub use desktop_pet::DesktopPetConfig;
 pub use model::{ModelBounds, fit_model_matrix};
