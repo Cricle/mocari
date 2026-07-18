@@ -1,10 +1,12 @@
 //! High-level Live2D engine that encapsulates wgpu setup, rendering, and animation.
 
 mod context;
+pub mod desktop_pet;
 mod model;
 mod plugin;
 mod render;
 
+pub use desktop_pet::DesktopPetConfig;
 pub use model::{ModelBounds, fit_model_matrix};
 pub use plugin::{FrameContext, Live2dPlugin, RenderContext};
 
@@ -436,5 +438,20 @@ impl Live2dEngine {
     /// Registers a plugin.
     pub fn add_plugin(&mut self, plugin: Box<dyn Live2dPlugin>) {
         self.plugins.push(plugin);
+    }
+
+    /// Returns a reference to the underlying window.
+    pub fn window(&self) -> &Arc<Window> {
+        self.ctx.window()
+    }
+
+    /// Enables or disables click-through on the window.
+    ///
+    /// When enabled, mouse events pass through the window to whatever is behind it.
+    pub fn set_click_through(&self, enabled: bool) -> Result<(), EngineError> {
+        self.ctx
+            .window()
+            .set_cursor_hittest(!enabled)
+            .map_err(|e| EngineError::Surface(e.to_string()))
     }
 }

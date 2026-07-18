@@ -85,6 +85,10 @@ impl WgpuContext {
         &self.config
     }
 
+    pub(super) fn window(&self) -> &Arc<Window> {
+        &self.window
+    }
+
     pub(super) fn resize(&mut self, size: PhysicalSize<u32>) {
         if size.width == 0 || size.height == 0 {
             return;
