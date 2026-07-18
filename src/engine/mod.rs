@@ -121,4 +121,117 @@ impl Live2dEngine {
     pub fn needs_redraw(&self) -> bool {
         self.needs_redraw
     }
+
+    /// Loads a model from a `.model3.json` file path.
+    pub fn load_model(&mut self, path: &str) -> Result<ModelHandle, EngineError> {
+        let loaded = load_model_runtime(path).map_err(|e| EngineError::ModelLoad(e.to_string()))?;
+        let runtime = loaded.runtime().clone();
+        let model_dir = loaded.model_dir();
+        let bounds = ModelBounds::from_drawables(runtime.meshes())
+            .ok_or_else(|| EngineError::ModelLoad("model has no drawable bounds".into()))?;
+
+        let textures = loaded
+            .textures()
+            .iter()
+            .map(|tex| {
+                self.renderer
+                    .create_rgba8_texture(self.ctx.device(), self.ctx.queue(), tex.width(), tex.height(), tex.rgba())
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| EngineError::ModelLoad(e.to_string()))?;
+
+        let motion_groups = model::motion_paths_by_group(&runtime, model_dir);
+        let expressions = model::expression_paths(&runtime, model_dir);
+
+        let mesh_buffers = WgpuMeshBuffers::from_drawables(self.ctx.device(), runtime.meshes())
+            .ok_or_else(|| EngineError::ModelLoad("failed to create mesh buffers".into()))?;
+
+        let mut clipping_plan = WgpuClippingPlan::from_mesh_buffers(&mesh_buffers);
+        clipping_plan.prepare_single_texture_masks(&mesh_buffers)?;
+        let clipping_resources = self.renderer.create_clipping_resources(self.ctx.device(), &clipping_plan)?;
+
+        let mask_target = self.renderer.create_mask_render_target(self.ctx.device(), MASK_TEXTURE_SIZE)
+            .map_err(|e| EngineError::ModelLoad(e.to_string()))?;
+
+        let config = self.ctx.config();
+        let transform = self.renderer.create_transform(
+            self.ctx.device(),
+            &fit_model_matrix(bounds, config.width, config.height, 1.0),
+        );
+
+        let animation = AnimationState {
+            motion_player: None,
+            expression_manager: ExpressionManager::new(),
+            eye_blink: None,
+            breath: None,
+            lip_sync: None,
+            mouse_tracker: None,
+        };
+
+        let mesh = MeshState {
+            mesh_buffers,
+            textures,
+            clipping_resources,
+            mask_target,
+        };
+
+        let id = format!("model_{}", self.models.len());
+        let handle = ModelHandle {
+            index: self.models.len(),
+            id: id.clone(),
+        };
+
+        self.models.push(LoadedModel {
+            id,
+            path: PathBuf::from(path),
+            runtime,
+            motions: motion_groups,
+            expressions,
+            animation,
+            mesh,
+            transform,
+            bounds,
+            scale: 1.0,
+            dirty: true,
+        });
+
+        for plugin in &mut self.plugins {
+            plugin.on_model_loaded(&handle);
+        }
+
+        self.needs_redraw = true;
+        Ok(handle)
+    }
+
+    /// Unloads a model by handle. Returns true if found and removed.
+    pub fn unload_model(&mut self, handle: &ModelHandle) -> bool {
+        if handle.index >= self.models.len() || self.models[handle.index].id != handle.id {
+            return false;
+        }
+        for plugin in &mut self.plugins {
+            plugin.on_model_unloaded(&handle.id);
+        }
+        self.models.remove(handle.index);
+        self.needs_redraw = true;
+        true
+    }
+
+    /// Returns a reference to a model's runtime, if the handle is valid.
+    pub fn model(&self, handle: &ModelHandle) -> Option<&crate::runtime::ModelRuntime> {
+        self.models
+            .get(handle.index)
+            .filter(|m| m.id == handle.id)
+            .map(|m| &m.runtime)
+    }
+
+    /// Returns a mutable reference to a model's runtime, if the handle is valid.
+    pub fn model_mut(&mut self, handle: &ModelHandle) -> Option<&mut crate::runtime::ModelRuntime> {
+        self.models
+            .get_mut(handle.index)
+            .filter(|m| m.id == handle.id)
+            .map(|m| {
+                m.dirty = true;
+                &mut m.runtime
+            })
+    }
 }

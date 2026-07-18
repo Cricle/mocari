@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::auto::{Breath, EyeBlink, LipSync, MouseTracker};
 use crate::expression::ExpressionManager;
@@ -111,4 +111,44 @@ pub fn fit_model_matrix(
     matrix.scale(scale_x, scale_y);
     matrix.translate(-bounds.center_x() * scale_x, -bounds.center_y() * scale_y);
     matrix
+}
+
+/// Resolves motion file paths grouped by motion group name.
+pub(super) fn motion_paths_by_group(
+    runtime: &crate::runtime::ModelRuntime,
+    model_dir: Option<&Path>,
+) -> BTreeMap<String, Vec<PathBuf>> {
+    let Some(model_dir) = model_dir else {
+        return BTreeMap::new();
+    };
+    runtime
+        .model()
+        .motions()
+        .iter()
+        .map(|(group, references)| {
+            (
+                group.clone(),
+                references
+                    .iter()
+                    .map(|reference| model_dir.join(reference.file()))
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
+/// Resolves expression file paths.
+pub(super) fn expression_paths(
+    runtime: &crate::runtime::ModelRuntime,
+    model_dir: Option<&Path>,
+) -> Vec<PathBuf> {
+    let Some(model_dir) = model_dir else {
+        return Vec::new();
+    };
+    runtime
+        .model()
+        .expressions()
+        .iter()
+        .map(|reference| model_dir.join(reference.file()))
+        .collect()
 }
