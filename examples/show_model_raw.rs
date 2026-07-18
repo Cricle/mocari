@@ -4,7 +4,7 @@ use ab_glyph::{Font, FontArc, Glyph, ScaleFont, point};
 use mocari::{
     ExpressionManager, ModelRuntime, MotionPlayer,
     assets::{DecodedTexture, load_model_runtime},
-    core::Matrix44,
+    core::{Mat4, Mat4Ext},
     expression::load_expression,
     moc3::{Moc3DrawableMesh, Moc3DrawableVertex},
     motion::load_motion,
@@ -435,7 +435,7 @@ impl WindowState {
         let button_buffers = create_button_quad_buffers(&device, size, SWITCH_BUTTON_Y)?;
         let button_texture = renderer.create_rgba8_texture(&device, &queue, 1, 1, BUTTON_RGBA)?;
         let button_uis = create_button_uis(&renderer, &device, &queue, &font, size)?;
-        let ui_transform = renderer.create_transform(&device, &Matrix44::identity());
+        let ui_transform = renderer.create_transform(&device, &Mat4::IDENTITY);
         let selected_parameter_index = initial_parameter_selection(&model.runtime);
         let parameter_label = create_parameter_label_quad(
             &renderer,
@@ -1598,10 +1598,10 @@ fn create_rect_quad_buffers(
         .ok_or_else(|| Box::new(ExampleError("failed to create rectangle buffers")).into())
 }
 
-fn button_offset_matrix(surface_size: PhysicalSize<u32>, top: f64) -> Matrix44 {
+fn button_offset_matrix(surface_size: PhysicalSize<u32>, top: f64) -> Mat4 {
     let delta = (top - SWITCH_BUTTON_Y) / f64::from(surface_size.height.max(1)) * 2.0;
-    let mut matrix = Matrix44::identity();
-    matrix.translate(0.0, -delta as f32);
+    let mut matrix = Mat4::IDENTITY;
+    matrix.w_axis.y = -delta as f32;
     matrix
 }
 
@@ -1712,7 +1712,7 @@ fn fit_model_matrix_with_scale(
     bounds: ModelBounds,
     surface_size: PhysicalSize<u32>,
     model_scale: f32,
-) -> Matrix44 {
+) -> Mat4 {
     let aspect = surface_size.width as f32 / surface_size.height as f32;
     let view_fill = MODEL_VIEW_FILL * model_scale.clamp(MODEL_SCALE_MIN, MODEL_SCALE_MAX);
     let fit_x = view_fill / (bounds.width() * aspect);
@@ -1720,16 +1720,18 @@ fn fit_model_matrix_with_scale(
     let scale_y = fit_x.min(fit_y);
     let scale_x = scale_y / aspect;
 
-    let mut matrix = Matrix44::identity();
-    matrix.scale(scale_x, scale_y);
-    matrix.translate(-bounds.center_x() * scale_x, -bounds.center_y() * scale_y);
+    let mut matrix = Mat4::IDENTITY;
+    matrix.x_axis.x = scale_x;
+    matrix.y_axis.y = scale_y;
+    matrix.w_axis.x = -bounds.center_x() * scale_x;
+    matrix.w_axis.y = -bounds.center_y() * scale_y;
     matrix
 }
 
 fn cursor_to_model_position(
     position: PhysicalPosition<f64>,
     surface_size: PhysicalSize<u32>,
-    transform: Matrix44,
+    transform: Mat4,
 ) -> Option<(f32, f32)> {
     if surface_size.width == 0 || surface_size.height == 0 {
         return None;

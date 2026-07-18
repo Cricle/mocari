@@ -75,6 +75,7 @@ pub struct Live2dEngine {
     plugins: Vec<Box<dyn Live2dPlugin>>,
     frame_callbacks: Vec<FrameCallback>,
     render_callbacks: Vec<RenderCallback>,
+    clear_color: Option<wgpu::Color>,
     last_delta: f32,
     needs_redraw: bool,
 }
@@ -95,6 +96,7 @@ impl Live2dEngine {
             plugins: Vec::new(),
             frame_callbacks: Vec::new(),
             render_callbacks: Vec::new(),
+            clear_color: None,
             last_delta: 0.0,
             needs_redraw: false,
         })
@@ -278,6 +280,7 @@ impl Live2dEngine {
             &mut self.models,
             &mut self.render_callbacks,
             &mut self.plugins,
+            self.clear_color,
         )?;
         self.needs_redraw = false;
         Ok(())
@@ -527,5 +530,192 @@ impl Live2dEngine {
             .window()
             .set_cursor_hittest(!enabled)
             .map_err(|e| EngineError::Surface(e.to_string()))
+    }
+
+    /// Sets the background clear color.
+    ///
+    /// Pass `None` for the default dark background, or `Some(Color::TRANSPARENT)`
+    /// for transparent windows (e.g., desktop pets).
+    pub fn set_clear_color(&mut self, color: Option<wgpu::Color>) {
+        self.clear_color = color;
+    }
+}
+
+/// Window configuration for [`run`] and [`run_with_config`].
+///
+/// Use builder methods to customize; defaults produce a standard 900×900 window.
+pub struct RunConfig {
+    pub title: String,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl Default for RunConfig {
+    fn default() -> Self {
+        Self {
+            title: "Live2D - Mocari".into(),
+            width: 900,
+            height: 900,
+        }
+    }
+}
+
+impl RunConfig {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn title(mut self, title: impl Into<String>) -> Self {
+        self.title = title.into();
+        self
+    }
+
+    pub fn size(mut self, width: u32, height: u32) -> Self {
+        self.width = width;
+        self.height = height;
+        self
+    }
+}
+
+/// Runs a Live2D model in a window with default settings.
+///
+/// This is the simplest way to display a model. It creates a window,
+/// initializes the engine, loads the model, and runs the event loop
+/// until the window is closed.
+///
+/// ```no_run
+/// fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     mocari::engine::run("assets/models/Ren/Ren.model3.json")
+/// }
+/// ```
+pub fn run(model_path: &str) -> Result<(), EngineError> {
+    run_with_config(model_path, RunConfig::default())
+}
+
+/// Runs a Live2D model with custom window configuration.
+///
+/// ```no_run
+/// use mocari::engine::RunConfig;
+///
+/// fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     mocari::engine::run_with_config(
+///         "assets/models/Ren/Ren.model3.json",
+///         RunConfig::new().title("My Model").size(800, 600),
+///     )
+/// }
+/// ```
+pub fn run_with_config(model_path: &str, config: RunConfig) -> Result<(), EngineError> {
+    let model_path = model_path.to_owned();
+
+    let event_loop = winit::event_loop::EventLoop::new()
+        .map_err(|e| EngineError::Surface(e.to_string()))?;
+    event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+
+    let mut app = App {
+        model_path,
+        config,
+        state: None,
+    };
+
+    event_loop
+        .run_app(&mut app)
+        .map_err(|e| EngineError::Surface(e.to_string()))
+}
+
+struct App {
+    model_path: String,
+    config: RunConfig,
+    state: Option<AppState>,
+}
+
+struct AppState {
+    engine: Live2dEngine,
+    window: Arc<Window>,
+    last_frame: std::time::Instant,
+}
+
+impl winit::application::ApplicationHandler for App {
+    fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        if self.state.is_some() {
+            return;
+        }
+
+        let attrs = Window::default_attributes()
+            .with_title(&self.config.title)
+            .with_inner_size(winit::dpi::LogicalSize::new(self.config.width, self.config.height));
+
+        let window = match event_loop.create_window(attrs) {
+            Ok(w) => Arc::new(w),
+            Err(e) => {
+                eprintln!("failed to create window: {e}");
+                event_loop.exit();
+                return;
+            }
+        };
+
+        match pollster::block_on(Live2dEngine::new(window.clone())) {
+            Ok(mut engine) => {
+                if !self.model_path.is_empty()
+                    && let Err(e) = engine.load_model(&self.model_path)
+                {
+                    eprintln!("failed to load model: {e}");
+                    event_loop.exit();
+                    return;
+                }
+                window.request_redraw();
+                self.state = Some(AppState {
+                    engine,
+                    window,
+                    last_frame: std::time::Instant::now(),
+                });
+            }
+            Err(e) => {
+                eprintln!("failed to initialize engine: {e}");
+                event_loop.exit();
+            }
+        }
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        _window_id: winit::window::WindowId,
+        event: winit::event::WindowEvent,
+    ) {
+        let Some(state) = self.state.as_mut() else {
+            return;
+        };
+
+        match event {
+            winit::event::WindowEvent::CloseRequested => event_loop.exit(),
+            winit::event::WindowEvent::Resized(size) => {
+                state.engine.resize(size);
+                state.window.request_redraw();
+            }
+            winit::event::WindowEvent::ScaleFactorChanged { .. } => {
+                state.engine.resize(state.window.inner_size());
+                state.window.request_redraw();
+            }
+            winit::event::WindowEvent::RedrawRequested => {
+                let now = std::time::Instant::now();
+                let delta = now.duration_since(state.last_frame).as_secs_f32();
+                state.last_frame = now;
+
+                state.engine.tick(delta);
+                if let Err(e) = state.engine.render() {
+                    eprintln!("render failed: {e}");
+                    event_loop.exit();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn about_to_wait(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
+        if let Some(state) = self.state.as_ref()
+            && state.engine.needs_continuous_redraw()
+        {
+            state.window.request_redraw();
+        }
     }
 }

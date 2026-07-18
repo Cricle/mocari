@@ -9,6 +9,7 @@ pub(super) fn render_frame(
     models: &mut [LoadedModel],
     render_callbacks: &mut [super::RenderCallback],
     plugins: &mut [Box<dyn super::Live2dPlugin>],
+    clear_color: Option<wgpu::Color>,
 ) -> Result<(), EngineError> {
     // Acquire surface texture
     let frame = match ctx.surface().get_current_texture() {
@@ -84,12 +85,12 @@ pub(super) fn render_frame(
                 depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                    load: wgpu::LoadOp::Clear(clear_color.unwrap_or(wgpu::Color {
                         r: 0.08,
                         g: 0.09,
                         b: 0.10,
                         a: 1.0,
-                    }),
+                    })),
                     store: wgpu::StoreOp::Store,
                 },
             })],
