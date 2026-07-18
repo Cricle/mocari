@@ -323,4 +323,117 @@ impl Live2dEngine {
     pub fn needs_continuous_redraw(&self) -> bool {
         self.models.iter().any(|m| model::is_animating(m))
     }
+
+    /// Plays a motion from the specified group.
+    /// If the group has multiple motions, plays the first one.
+    pub fn play_motion(
+        &mut self,
+        handle: &ModelHandle,
+        group: &str,
+    ) -> Result<(), EngineError> {
+        let model = self
+            .models
+            .get_mut(handle.index)
+            .filter(|m| m.id == handle.id)
+            .ok_or_else(|| EngineError::ModelNotFound(handle.id.clone()))?;
+
+        let motion_paths = model.motions.get(group).ok_or_else(|| {
+            EngineError::ModelLoad(format!("motion group '{}' not found", group))
+        })?;
+
+        if motion_paths.is_empty() {
+            return Err(EngineError::ModelLoad(format!(
+                "motion group '{}' is empty",
+                group
+            )));
+        }
+
+        let motion = load_motion(&motion_paths[0])
+            .map_err(|e| EngineError::ModelLoad(e.to_string()))?;
+        model.animation.motion_player = Some(MotionPlayer::new(motion));
+        model.dirty = true;
+        self.needs_redraw = true;
+        Ok(())
+    }
+
+    /// Plays a named expression.
+    /// The name is matched against expression file stems (e.g., "happy" matches "happy.exp3.json").
+    pub fn play_expression(
+        &mut self,
+        handle: &ModelHandle,
+        name: &str,
+    ) -> Result<(), EngineError> {
+        let model = self
+            .models
+            .get_mut(handle.index)
+            .filter(|m| m.id == handle.id)
+            .ok_or_else(|| EngineError::ModelNotFound(handle.id.clone()))?;
+
+        let path = model.expressions.iter().find(|p| {
+            p.file_stem()
+                .and_then(|s| s.to_str())
+                .map(|s| s == name)
+                .unwrap_or(false)
+        }).ok_or_else(|| {
+            EngineError::ModelLoad(format!("expression '{}' not found", name))
+        })?;
+
+        let expression = crate::expression::load_expression(path)
+            .map_err(|e| EngineError::ModelLoad(e.to_string()))?;
+        model.animation.expression_manager.play(expression);
+        model.dirty = true;
+        self.needs_redraw = true;
+        Ok(())
+    }
+
+    /// Sets a parameter value on a model.
+    pub fn set_parameter(&mut self, handle: &ModelHandle, id: &str, value: f32) {
+        if let Some(model) = self.models.get_mut(handle.index).filter(|m| m.id == handle.id) {
+            model.runtime.set_parameter(id, value);
+            model.dirty = true;
+            self.needs_redraw = true;
+        }
+    }
+
+    /// Sets the display scale for a model.
+    pub fn set_scale(&mut self, handle: &ModelHandle, scale: f32) {
+        if let Some(model) = self.models.get_mut(handle.index).filter(|m| m.id == handle.id) {
+            model.scale = scale.clamp(0.5, 2.0);
+            let config = self.ctx.config();
+            model.transform.update_matrix(
+                self.ctx.queue(),
+                &model::fit_model_matrix(model.bounds, config.width, config.height, model.scale),
+            );
+            self.needs_redraw = true;
+        }
+    }
+
+    /// Configures eye blink for a model.
+    /// Pass `Some(config)` to enable, `None` to disable.
+    pub fn configure_eye_blink(&mut self, handle: &ModelHandle, config: Option<EyeBlinkConfig>) {
+        if let Some(model) = self.models.get_mut(handle.index).filter(|m| m.id == handle.id) {
+            if let Some(config) = config {
+                model.animation.eye_blink = Some(EyeBlink::new(config));
+            } else {
+                model.animation.eye_blink = None;
+            }
+        }
+    }
+
+    /// Configures breath for a model.
+    /// Pass `Some(config)` to enable, `None` to disable.
+    pub fn configure_breath(&mut self, handle: &ModelHandle, config: Option<BreathConfig>) {
+        if let Some(model) = self.models.get_mut(handle.index).filter(|m| m.id == handle.id) {
+            if let Some(config) = config {
+                model.animation.breath = Some(Breath::new(config));
+            } else {
+                model.animation.breath = None;
+            }
+        }
+    }
+
+    /// Registers a plugin.
+    pub fn add_plugin(&mut self, plugin: Box<dyn Live2dPlugin>) {
+        self.plugins.push(plugin);
+    }
 }
