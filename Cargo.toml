@@ -46,7 +46,7 @@ optional = true
 wgpu = { version = "30.0.0", features = ["noop"], optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wgpu = { version = "30.0.0", features = ["webgpu"], optional = true }
+wgpu = { version = "30.0.0", features = ["webgpu", "webgl"], optional = true }
 
 [dev-dependencies]
 ab_glyph = "0.2.31"
