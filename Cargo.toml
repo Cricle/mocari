@@ -43,7 +43,7 @@ required-features = ["wgpu"]
 
 [[test]]
 name = "mcp"
-path = "test/mcp.rs"
+path = "tests/mcp_tests.rs"
 required-features = ["mcp"]
 
 [[test]]
