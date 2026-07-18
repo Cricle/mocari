@@ -9,10 +9,26 @@ use winit::platform::web::EventLoopExtWebSys;
 
 use mocari::engine::Live2dEngine;
 
+fn set_panic_hook() {
+    std::panic::set_hook(Box::new(|info| {
+        let msg = info.to_string();
+        web_sys::console::error_1(&format!("[mocari PANIC] {msg}").into());
+    }));
+}
+
 #[wasm_bindgen(start)]
 pub fn main() {
-    let event_loop = winit::event_loop::EventLoop::new().expect("event loop");
+    set_panic_hook();
+    web_sys::console::log_1(&"[mocari] wasm module loaded".into());
+    let event_loop = match winit::event_loop::EventLoop::new() {
+        Ok(el) => el,
+        Err(e) => {
+            web_sys::console::error_1(&format!("[mocari] event loop failed: {e}").into());
+            return;
+        }
+    };
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+    web_sys::console::log_1(&"[mocari] spawning app".into());
     event_loop.spawn_app(WebApp::default());
 }
 
@@ -27,6 +43,7 @@ struct WebApp {
 
 impl winit::application::ApplicationHandler for WebApp {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        web_sys::console::log_1(&"[mocari] resumed called".into());
         if self.window.is_some() {
             return;
         }
@@ -44,6 +61,7 @@ impl winit::application::ApplicationHandler for WebApp {
             }
         };
 
+        web_sys::console::log_1(&"[mocari] window created".into());
         self.window = Some(window);
     }
 
@@ -75,6 +93,7 @@ impl winit::application::ApplicationHandler for WebApp {
         // Kick off async engine + model init once
         if !self.init_started {
             if let Some(window) = &self.window {
+                web_sys::console::log_1(&"[mocari] about_to_wait: starting engine init".into());
                 self.init_started = true;
                 let engine = self.engine.clone();
                 let window = window.clone();
