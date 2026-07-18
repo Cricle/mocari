@@ -54,6 +54,9 @@ pub mod motion;
 pub mod render;
 /// Auto-animation features for eye blink, lip sync, breath, and mouse tracking.
 pub mod auto;
+/// High-level engine that encapsulates wgpu setup, rendering, and animation.
+#[cfg(feature = "wgpu")]
+pub mod engine;
 /// Mutable model state used for parameter edits, pose updates, and mesh output.
 pub mod runtime;
 /// MCP (Model Context Protocol) server for controlling Live2D models.

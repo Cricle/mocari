@@ -12,7 +12,7 @@ exclude = ["assets/", ".github/"]
 
 [features]
 default = []
-wgpu = ["dep:wgpu"]
+wgpu = ["dep:wgpu", "dep:pollster", "dep:winit"]
 mcp = ["dep:rmcp", "dep:tokio", "dep:clap"]
 mcp-http = ["mcp", "rmcp/transport-streamable-http-server"]
 
@@ -26,6 +26,8 @@ wgpu = { version = "30.0.0", features = ["noop"], optional = true }
 rmcp = { version = "2", default-features = false, features = ["server", "transport-io", "macros", "schemars"], optional = true }
 tokio = { version = "1", features = ["full"], optional = true }
 clap = { version = "4", features = ["derive"], optional = true }
+pollster = { version = "0.4", optional = true }
+winit = { version = "0.30", optional = true }
 
 [dev-dependencies]
 ab_glyph = "0.2.31"
