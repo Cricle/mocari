@@ -1,7 +1,7 @@
 pub mod creator;
 pub mod runtime;
 pub mod session;
-mod tools;
+pub mod tools;
 
 use std::sync::Arc;
 

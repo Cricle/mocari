@@ -42,5 +42,10 @@ name = "show_model"
 required-features = ["wgpu"]
 
 [[test]]
+name = "mcp"
+path = "test/mcp.rs"
+required-features = ["mcp"]
+
+[[test]]
 name = "wgpu_renderer"
 required-features = ["wgpu"]
