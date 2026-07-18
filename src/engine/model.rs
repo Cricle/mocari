@@ -114,6 +114,112 @@ pub fn fit_model_matrix(
     matrix
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn model_bounds_from_empty_drawables_returns_none() {
+        assert!(ModelBounds::from_drawables(&[]).is_none());
+    }
+
+    #[test]
+    fn model_bounds_computes_correct_extents() {
+        use crate::moc3::{Moc3DrawableMesh, Moc3DrawableVertex};
+
+        let mesh = Moc3DrawableMesh::from_parts(
+            0,
+            0,
+            1.0,
+            0.0,
+            vec![
+                Moc3DrawableVertex::new([-1.0, -2.0], [0.0, 0.0]),
+                Moc3DrawableVertex::new([3.0, 4.0], [1.0, 1.0]),
+            ],
+            vec![0, 1],
+            Vec::new(),
+        );
+
+        let bounds = ModelBounds::from_drawables(&[mesh]).unwrap();
+        assert_eq!(bounds.min_x, -1.0);
+        assert_eq!(bounds.min_y, -2.0);
+        assert_eq!(bounds.max_x, 3.0);
+        assert_eq!(bounds.max_y, 4.0);
+        assert_eq!(bounds.width(), 4.0);
+        assert_eq!(bounds.height(), 6.0);
+        assert_eq!(bounds.center_x(), 1.0);
+        assert_eq!(bounds.center_y(), 1.0);
+    }
+
+    #[test]
+    fn fit_model_matrix_centers_model() {
+        let bounds = ModelBounds {
+            min_x: -2.0,
+            min_y: -1.0,
+            max_x: 2.0,
+            max_y: 3.0,
+        };
+
+        let matrix = fit_model_matrix(bounds, 100, 100, 1.0);
+
+        let cx = bounds.center_x();
+        let cy = bounds.center_y();
+        let tx = matrix.transform_x(cx);
+        let ty = matrix.transform_y(cy);
+        assert!((tx).abs() < 0.001, "center x should be ~0, got {}", tx);
+        assert!((ty).abs() < 0.001, "center y should be ~0, got {}", ty);
+    }
+
+    #[test]
+    fn fit_model_matrix_fits_within_surface() {
+        let bounds = ModelBounds {
+            min_x: 0.0,
+            min_y: 0.0,
+            max_x: 1.0,
+            max_y: 1.0,
+        };
+
+        let matrix = fit_model_matrix(bounds, 200, 100, 1.0);
+
+        assert!(matrix.transform_x(bounds.min_x) >= -1.0);
+        assert!(matrix.transform_x(bounds.max_x) <= 1.0);
+        assert!(matrix.transform_y(bounds.min_y) >= -1.0);
+        assert!(matrix.transform_y(bounds.max_y) <= 1.0);
+    }
+
+    #[test]
+    fn fit_model_matrix_preserves_aspect_ratio() {
+        let bounds = ModelBounds {
+            min_x: 0.0,
+            min_y: 0.0,
+            max_x: 1.0,
+            max_y: 1.0,
+        };
+
+        let wide = fit_model_matrix(bounds, 200, 100, 1.0);
+        let tall = fit_model_matrix(bounds, 100, 200, 1.0);
+
+        assert!((wide.scale_x()).abs() < (wide.scale_y()).abs());
+        assert!((tall.scale_y()).abs() < (tall.scale_x()).abs());
+    }
+
+    #[test]
+    fn fit_model_matrix_applies_scale_multiplier() {
+        let bounds = ModelBounds {
+            min_x: -1.0,
+            min_y: -1.0,
+            max_x: 1.0,
+            max_y: 1.0,
+        };
+
+        let normal = fit_model_matrix(bounds, 100, 100, 1.0);
+        let large = fit_model_matrix(bounds, 100, 100, 2.0);
+
+        assert!((large.scale_x()).abs() > (normal.scale_x()).abs());
+        assert!((large.scale_y()).abs() > (normal.scale_y()).abs());
+    }
+}
+
 /// Resolves motion file paths grouped by motion group name.
 pub(super) fn motion_paths_by_group(
     runtime: &crate::runtime::ModelRuntime,
