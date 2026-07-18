@@ -263,16 +263,11 @@ pub(super) fn expression_paths(
         .collect()
 }
 
-/// Returns true if the model has user-triggered animation (motion, expression).
-pub(super) fn is_active(model: &LoadedModel) -> bool {
+/// Returns true if the model has any running animation (including auto-systems).
+pub(super) fn is_animating(model: &LoadedModel) -> bool {
     model.animation.motion_player.is_some()
         || model.animation.expression_manager.active_expression_count() > 0
         || model.runtime.physics().is_some()
-}
-
-/// Returns true if the model has any animation at all (including auto-systems).
-pub(super) fn is_animating(model: &LoadedModel) -> bool {
-    is_active(model)
         || model.animation.eye_blink.is_some()
         || model.animation.breath.is_some()
 }

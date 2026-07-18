@@ -52,7 +52,9 @@ impl WgpuContext {
         config.format = preferred_surface_format(&capabilities.formats)
             .ok_or_else(|| EngineError::Surface("no suitable surface format".into()))?;
 
-        config.present_mode = [wgpu::PresentMode::Immediate, wgpu::PresentMode::Mailbox]
+        // Prefer vsync (Fifo) for natural frame pacing and low idle CPU.
+        // Falls back to AutoNoVsync if somehow Fifo isn't supported.
+        config.present_mode = [wgpu::PresentMode::Fifo, wgpu::PresentMode::Mailbox]
             .into_iter()
             .find(|mode| capabilities.present_modes.contains(mode))
             .unwrap_or(wgpu::PresentMode::AutoNoVsync);

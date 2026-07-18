@@ -77,8 +77,6 @@ pub struct Live2dEngine {
     render_callbacks: Vec<RenderCallback>,
     last_delta: f32,
     needs_redraw: bool,
-    idle_fps: u32,
-    last_render: Option<std::time::Instant>,
 }
 
 impl Live2dEngine {
@@ -99,8 +97,6 @@ impl Live2dEngine {
             render_callbacks: Vec::new(),
             last_delta: 0.0,
             needs_redraw: false,
-            idle_fps: 15,
-            last_render: None,
         })
     }
 
@@ -266,7 +262,6 @@ impl Live2dEngine {
             &mut self.plugins,
         )?;
         self.needs_redraw = false;
-        self.last_render = Some(std::time::Instant::now());
         Ok(())
     }
 
@@ -330,34 +325,6 @@ impl Live2dEngine {
     /// Returns true if any model is actively animating and needs continuous redraws.
     pub fn needs_continuous_redraw(&self) -> bool {
         self.models.iter().any(model::is_animating)
-    }
-
-    /// Returns true if any model has active motion/expression (not just auto-systems).
-    pub fn has_active_animation(&self) -> bool {
-        self.models.iter().any(model::is_active)
-    }
-
-    /// Sets the frame rate cap when only auto-systems (eye blink, breath) are active.
-    ///
-    /// Default is 15 fps. Set to 0 to disable idle throttling.
-    pub fn set_idle_fps(&mut self, fps: u32) {
-        self.idle_fps = fps;
-    }
-
-    /// Returns the instant when the next frame should render.
-    ///
-    /// If active animation is running, returns now (full speed).
-    /// If only auto-systems, returns now + idle interval.
-    pub fn next_render_time(&self) -> std::time::Instant {
-        let now = std::time::Instant::now();
-        if self.has_active_animation() || self.idle_fps == 0 {
-            return now;
-        }
-        let interval = std::time::Duration::from_secs_f64(1.0 / self.idle_fps as f64);
-        match self.last_render {
-            Some(last) => last + interval,
-            None => now,
-        }
     }
 
     /// Plays a motion from the specified group.

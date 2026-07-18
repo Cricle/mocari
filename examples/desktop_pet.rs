@@ -147,15 +147,11 @@ impl ApplicationHandler for DesktopPetApp {
         }
     }
 
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        if let Some(state) = self.state.as_ref() {
-            if state.engine.needs_continuous_redraw() {
-                let next = state.engine.next_render_time();
-                event_loop.set_control_flow(ControlFlow::WaitUntil(next));
-                state.window.request_redraw();
-            } else {
-                event_loop.set_control_flow(ControlFlow::Wait);
-            }
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        if let Some(state) = self.state.as_ref()
+            && state.engine.needs_continuous_redraw()
+        {
+            state.window.request_redraw();
         }
     }
 }
