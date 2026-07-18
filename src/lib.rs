@@ -57,6 +57,12 @@ pub mod auto;
 /// High-level engine that encapsulates wgpu setup, rendering, and animation.
 #[cfg(feature = "wgpu")]
 pub mod engine;
+/// Convenience re-exports for the high-level engine API.
+#[cfg(feature = "wgpu")]
+pub mod prelude {
+    pub use crate::engine::{EngineError, Live2dEngine, ModelHandle};
+    pub use crate::engine::{FrameContext, Live2dPlugin, RenderContext};
+}
 /// Mutable model state used for parameter edits, pose updates, and mesh output.
 pub mod runtime;
 /// MCP (Model Context Protocol) server for controlling Live2D models.
