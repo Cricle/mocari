@@ -6,7 +6,8 @@ use crate::expression::ExpressionManager;
 use crate::motion::MotionPlayer;
 use crate::runtime::ModelRuntime;
 use crate::render::wgpu::{
-    WgpuClippingResources, WgpuMaskRenderTarget, WgpuMeshBuffers, WgpuTexture, WgpuTransform,
+    WgpuClippingPlan, WgpuClippingResources, WgpuLive2dRenderer, WgpuMaskRenderTarget,
+    WgpuMeshBuffers, WgpuTexture, WgpuTransform,
 };
 
 use super::MODEL_VIEW_FILL;
@@ -151,4 +152,108 @@ pub(super) fn expression_paths(
         .iter()
         .map(|reference| model_dir.join(reference.file()))
         .collect()
+}
+
+/// Returns true if the model is actively animating.
+pub(super) fn is_animating(model: &LoadedModel) -> bool {
+    model.animation.motion_player.is_some()
+        || model.animation.expression_manager.active_expression_count() > 0
+        || model.runtime.physics().is_some()
+        || model.animation.eye_blink.is_some()
+        || model.animation.breath.is_some()
+}
+
+/// Advances one model's animation state by `delta` seconds.
+/// Returns true if the model state changed (needs GPU update).
+pub(super) fn tick_model(model: &mut LoadedModel, delta: f32) -> bool {
+    if !model.dirty && !is_animating(model) {
+        return false;
+    }
+
+    model.runtime.reset_parameters();
+    model.runtime.reset_part_opacities();
+
+    // Motion
+    if let Some(player) = model.animation.motion_player.as_mut() {
+        player.tick(delta);
+        player.apply(&mut model.runtime);
+        if player.is_finished() {
+            model.animation.motion_player = None;
+        }
+    }
+
+    // Expression
+    model.animation.expression_manager.tick(delta);
+    model.animation.expression_manager.apply(&mut model.runtime);
+
+    // Auto-systems
+    if let Some(eye_blink) = model.animation.eye_blink.as_mut() {
+        eye_blink.tick(delta);
+        eye_blink.apply(&mut model.runtime);
+    }
+    if let Some(breath) = model.animation.breath.as_mut() {
+        breath.tick(delta);
+        breath.apply(&mut model.runtime);
+    }
+
+    // Parameter overrides + physics + pose
+    model.runtime.apply_parameter_overrides();
+    model.runtime.apply_physics(delta);
+    model.runtime.apply_pose(delta);
+
+    // Update meshes
+    model.runtime.update_meshes();
+    model.dirty = false;
+    true
+}
+
+/// Updates GPU mesh buffers after animation tick.
+pub(super) fn update_model_gpu(
+    renderer: &WgpuLive2dRenderer,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    model: &mut LoadedModel,
+) -> Result<(), super::EngineError> {
+    let update = match model.mesh.mesh_buffers.update_drawables(queue, model.runtime.meshes()) {
+        Ok(update) => update,
+        Err(_) => {
+            let mesh_buffers = WgpuMeshBuffers::from_drawables(device, model.runtime.meshes())
+                .ok_or(crate::render::wgpu::WgpuRenderError::MissingDrawable { drawable_index: 0 })?;
+            model.mesh.mesh_buffers = mesh_buffers;
+            rebuild_clipping(renderer, device, model)?;
+            return Ok(());
+        }
+    };
+
+    if update.bounds_changed() || update.visibility_changed() {
+        update_clipping(renderer, device, queue, model)?;
+    }
+    Ok(())
+}
+
+/// Rebuilds clipping resources from scratch.
+pub(super) fn rebuild_clipping(
+    renderer: &WgpuLive2dRenderer,
+    device: &wgpu::Device,
+    model: &mut LoadedModel,
+) -> Result<(), crate::render::common::ClippingLayoutError> {
+    let mut plan = WgpuClippingPlan::from_mesh_buffers(&model.mesh.mesh_buffers);
+    plan.prepare_single_texture_masks(&model.mesh.mesh_buffers)?;
+    model.mesh.clipping_resources = renderer.create_clipping_resources(device, &plan)?;
+    Ok(())
+}
+
+/// Updates clipping resources in-place if possible, otherwise rebuilds.
+pub(super) fn update_clipping(
+    renderer: &WgpuLive2dRenderer,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    model: &mut LoadedModel,
+) -> Result<(), crate::render::common::ClippingLayoutError> {
+    let mut plan = WgpuClippingPlan::from_mesh_buffers(&model.mesh.mesh_buffers);
+    plan.prepare_single_texture_masks(&model.mesh.mesh_buffers)?;
+    if !renderer.update_clipping_resources(queue, &mut model.mesh.clipping_resources, &plan)? {
+        model.mesh.clipping_resources = renderer.create_clipping_resources(device, &plan)?;
+    }
+    Ok(())
 }

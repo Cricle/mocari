@@ -267,4 +267,47 @@ impl Live2dEngine {
     pub fn on_render(&mut self, callback: impl FnMut(&mut RenderContext) + 'static) {
         self.render_callbacks.push(Box::new(callback));
     }
+
+    /// Advances all models' animation state by `delta` seconds.
+    /// Call this once per frame before `render()`.
+    pub fn tick(&mut self, delta: f32) {
+        self.last_delta = delta;
+
+        for model in &mut self.models {
+            let changed = model::tick_model(model, delta);
+            if changed {
+                if let Err(e) =
+                    model::update_model_gpu(&self.renderer, self.ctx.device(), self.ctx.queue(), model)
+                {
+                    eprintln!("engine: GPU update failed: {e}");
+                }
+                self.needs_redraw = true;
+            }
+        }
+
+        // Frame callbacks
+        let mut ctx = FrameContext {
+            delta,
+            device: self.ctx.device(),
+            queue: self.ctx.queue(),
+        };
+        for callback in &mut self.frame_callbacks {
+            callback(&mut ctx);
+        }
+
+        // Plugin on_frame
+        for plugin in &mut self.plugins {
+            plugin.on_frame(&mut ctx);
+        }
+    }
+
+    /// Registers a callback that runs each frame after model updates.
+    pub fn on_frame(&mut self, callback: impl FnMut(&mut FrameContext) + 'static) {
+        self.frame_callbacks.push(Box::new(callback));
+    }
+
+    /// Returns true if any model is actively animating and needs continuous redraws.
+    pub fn needs_continuous_redraw(&self) -> bool {
+        self.models.iter().any(|m| model::is_animating(m))
+    }
 }
