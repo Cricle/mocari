@@ -405,6 +405,11 @@ pub fn load_expression(path: impl AsRef<Path>) -> Result<Expression3, Expression
     Expression3::from_json_str(&source).map_err(ExpressionLoadError::Parse)
 }
 
+/// Parses an `exp3.json` from a string (web-compatible).
+pub fn load_expression_from_json(json: &str) -> Result<Expression3, ExpressionLoadError> {
+    Expression3::from_json_str(json).map_err(ExpressionLoadError::Parse)
+}
+
 #[derive(Debug, thiserror::Error)]
 /// Errors that can occur while loading an expression file.
 pub enum ExpressionLoadError {

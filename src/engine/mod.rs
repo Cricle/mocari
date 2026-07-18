@@ -5,6 +5,8 @@ pub mod desktop_pet;
 mod model;
 mod plugin;
 mod render;
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod web;
 
 pub use desktop_pet::DesktopPetConfig;
 pub use model::{ModelBounds, fit_model_matrix};
@@ -410,6 +412,154 @@ impl Live2dEngine {
         Ok(())
     }
 
+    /// Loads a model from pre-fetched bytes (web-compatible).
+    ///
+    /// Provide the `.model3.json` content, the `.moc3` binary, and each
+    /// referenced texture as PNG bytes in the order listed in the model JSON.
+    pub fn load_model_from_bytes(
+        &mut self,
+        model_json: &str,
+        moc3_bytes: &[u8],
+        texture_pngs: &[&[u8]],
+    ) -> Result<ModelHandle, EngineError> {
+        let loaded = crate::assets::load_model_from_bytes(model_json, moc3_bytes, texture_pngs)
+            .map_err(|e| EngineError::ModelLoad(e.to_string()))?;
+        let runtime = loaded.runtime().clone();
+        let bounds = ModelBounds::from_drawables(runtime.meshes())
+            .ok_or_else(|| EngineError::ModelLoad("model has no drawable bounds".into()))?;
+
+        let textures = loaded
+            .textures()
+            .iter()
+            .map(|tex| {
+                self.renderer
+                    .create_rgba8_texture(self.ctx.device(), self.ctx.queue(), tex.width(), tex.height(), tex.rgba())
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| EngineError::ModelLoad(e.to_string()))?;
+
+        let mesh_buffers = WgpuMeshBuffers::from_drawables(self.ctx.device(), runtime.meshes())
+            .ok_or_else(|| EngineError::ModelLoad("failed to create mesh buffers".into()))?;
+
+        let mut clipping_plan = WgpuClippingPlan::from_mesh_buffers(&mesh_buffers);
+        clipping_plan.prepare_single_texture_masks(&mesh_buffers)?;
+        let clipping_resources = self.renderer.create_clipping_resources(self.ctx.device(), &clipping_plan)?;
+
+        let mask_target = self.renderer.create_mask_render_target(self.ctx.device(), MASK_TEXTURE_SIZE)
+            .map_err(|e| EngineError::ModelLoad(e.to_string()))?;
+
+        let config = self.ctx.config();
+        let transform = self.renderer.create_transform(
+            self.ctx.device(),
+            &fit_model_matrix(bounds, config.width, config.height, 1.0),
+        );
+
+        let has_eye_params = runtime.parameter_ids().iter().any(|id| {
+            matches!(id.as_str(), "ParamEyeLOpen" | "ParamEyeROpen" | "ParamEyeOpen")
+        });
+        let eye_blink = if has_eye_params {
+            Some(EyeBlink::with_defaults())
+        } else {
+            None
+        };
+        let breath = Some(Breath::with_defaults());
+
+        let lip_sync_config = runtime.lip_sync_config_from_model();
+        let lip_sync = if !lip_sync_config.parameter_indices.is_empty() || runtime.parameter_ids().iter().any(|id| id == "ParamMouthOpenY") {
+            Some(LipSync::new(lip_sync_config))
+        } else {
+            None
+        };
+
+        let has_tracking_params = runtime.parameter_ids().iter().any(|id| {
+            matches!(id.as_str(), "ParamAngleX" | "ParamAngleY" | "ParamEyeBallX" | "ParamEyeBallY")
+        });
+        let mouse_tracker = if has_tracking_params {
+            Some(MouseTracker::with_defaults())
+        } else {
+            None
+        };
+
+        let animation = AnimationState {
+            motion_player: None,
+            expression_manager: ExpressionManager::new(),
+            eye_blink,
+            breath,
+            lip_sync,
+            mouse_tracker,
+        };
+
+        let mesh = MeshState {
+            mesh_buffers,
+            textures,
+            clipping_resources,
+            mask_target,
+        };
+
+        let id = format!("model_{}", self.models.len());
+        let handle = ModelHandle {
+            index: self.models.len(),
+            id: id.clone(),
+        };
+
+        self.models.push(LoadedModel {
+            id,
+            path: std::path::PathBuf::new(),
+            runtime,
+            motions: std::collections::BTreeMap::new(),
+            expressions: Vec::new(),
+            animation,
+            mesh,
+            transform,
+            bounds,
+            scale: 1.0,
+            dirty: true,
+        });
+
+        self.needs_redraw = true;
+        Ok(handle)
+    }
+
+    /// Plays a motion from a JSON string (web-compatible).
+    pub fn play_motion_from_json(
+        &mut self,
+        handle: &ModelHandle,
+        motion_json: &str,
+    ) -> Result<(), EngineError> {
+        let model = self
+            .models
+            .get_mut(handle.index)
+            .filter(|m| m.id == handle.id)
+            .ok_or_else(|| EngineError::ModelNotFound(handle.id.clone()))?;
+
+        let motion = crate::motion::load_motion_from_json(motion_json)
+            .map_err(|e| EngineError::ModelLoad(e.to_string()))?;
+        model.animation.motion_player = Some(MotionPlayer::new(motion));
+        model.dirty = true;
+        self.needs_redraw = true;
+        Ok(())
+    }
+
+    /// Plays an expression from a JSON string (web-compatible).
+    pub fn play_expression_from_json(
+        &mut self,
+        handle: &ModelHandle,
+        expression_json: &str,
+    ) -> Result<(), EngineError> {
+        let model = self
+            .models
+            .get_mut(handle.index)
+            .filter(|m| m.id == handle.id)
+            .ok_or_else(|| EngineError::ModelNotFound(handle.id.clone()))?;
+
+        let expression = crate::expression::load_expression_from_json(expression_json)
+            .map_err(|e| EngineError::ModelLoad(e.to_string()))?;
+        model.animation.expression_manager.play(expression);
+        model.dirty = true;
+        self.needs_redraw = true;
+        Ok(())
+    }
+
     /// Sets a parameter value on a model.
     pub fn set_parameter(&mut self, handle: &ModelHandle, id: &str, value: f32) {
         if let Some(model) = self.models.get_mut(handle.index).filter(|m| m.id == handle.id) {
@@ -617,9 +767,19 @@ pub fn run_with_config(model_path: &str, config: RunConfig) -> Result<(), Engine
         state: None,
     };
 
-    event_loop
-        .run_app(&mut app)
-        .map_err(|e| EngineError::Surface(e.to_string()))
+    #[cfg(target_arch = "wasm32")]
+    {
+        use winit::platform::web::EventLoopExtWebSys;
+        event_loop.spawn_app(app);
+        Ok(())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        event_loop
+            .run_app(&mut app)
+            .map_err(|e| EngineError::Surface(e.to_string()))
+    }
 }
 
 /// Runs a model as a desktop pet with default pet settings.
@@ -690,26 +850,9 @@ impl winit::application::ApplicationHandler for App {
             }
         };
 
-        match pollster::block_on(Live2dEngine::new(window.clone())) {
-            Ok(mut engine) => {
-                if !self.model_path.is_empty()
-                    && let Err(e) = engine.load_model(&self.model_path)
-                {
-                    eprintln!("failed to load model: {e}");
-                    event_loop.exit();
-                    return;
-                }
-                window.request_redraw();
-                self.state = Some(AppState {
-                    engine,
-                    window,
-                    last_frame: std::time::Instant::now(),
-                });
-            }
-            Err(e) => {
-                eprintln!("failed to initialize engine: {e}");
-                event_loop.exit();
-            }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.init_engine(event_loop, window);
         }
     }
 
@@ -757,6 +900,33 @@ impl winit::application::ApplicationHandler for App {
     }
 }
 
+impl App {
+    #[cfg(not(target_arch = "wasm32"))]
+    fn init_engine(&mut self, event_loop: &winit::event_loop::ActiveEventLoop, window: Arc<Window>) {
+        match pollster::block_on(Live2dEngine::new(window.clone())) {
+            Ok(mut engine) => {
+                if !self.model_path.is_empty()
+                    && let Err(e) = engine.load_model(&self.model_path)
+                {
+                    eprintln!("failed to load model: {e}");
+                    event_loop.exit();
+                    return;
+                }
+                window.request_redraw();
+                self.state = Some(AppState {
+                    engine,
+                    window,
+                    last_frame: std::time::Instant::now(),
+                });
+            }
+            Err(e) => {
+                eprintln!("failed to initialize engine: {e}");
+                event_loop.exit();
+            }
+        }
+    }
+}
+
 struct DesktopPetApp {
     model_path: String,
     config: DesktopPetConfig,
@@ -785,6 +955,7 @@ impl winit::application::ApplicationHandler for DesktopPetApp {
             }
         };
 
+        #[cfg(not(target_arch = "wasm32"))]
         match pollster::block_on(Live2dEngine::new(window.clone())) {
             Ok(mut engine) => {
                 engine.set_clear_color(self.config.clear_color);

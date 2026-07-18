@@ -468,6 +468,11 @@ pub fn load_motion(path: impl AsRef<Path>) -> Result<Motion3, MotionLoadError> {
     Motion3::from_json_str(&source).map_err(MotionLoadError::Parse)
 }
 
+/// Parses a `motion3.json` from a string (web-compatible).
+pub fn load_motion_from_json(json: &str) -> Result<Motion3, MotionLoadError> {
+    Motion3::from_json_str(json).map_err(MotionLoadError::Parse)
+}
+
 #[derive(Debug, thiserror::Error)]
 /// Errors that can occur while loading a motion file.
 pub enum MotionLoadError {

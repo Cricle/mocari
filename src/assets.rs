@@ -155,6 +155,27 @@ pub fn load_model_runtime(path: impl AsRef<Path>) -> Result<RuntimeModel, AssetL
     parse_model(path)?.into_runtime_model(model_dir)
 }
 
+/// Loads a model from pre-fetched bytes (web-compatible).
+///
+/// All data must be provided upfront: the `.model3.json` content as a string,
+/// the `.moc3` binary, and each referenced texture as PNG bytes (in order).
+pub fn load_model_from_bytes(
+    model_json: &str,
+    moc3_bytes: &[u8],
+    texture_pngs: &[&[u8]],
+) -> Result<RuntimeModel, AssetLoadError> {
+    parse_model_from_bytes(model_json, moc3_bytes, texture_pngs)?.into_runtime_model(None)
+}
+
+/// Loads a model snapshot from pre-fetched bytes (web-compatible).
+pub fn load_model_snapshot_from_bytes(
+    model_json: &str,
+    moc3_bytes: &[u8],
+    texture_pngs: &[&[u8]],
+) -> Result<DefaultModel, AssetLoadError> {
+    parse_model_from_bytes(model_json, moc3_bytes, texture_pngs)?.into_default_model()
+}
+
 #[derive(Debug, Clone)]
 /// A loaded model with mutable runtime state and decoded textures.
 pub struct RuntimeModel {
@@ -380,4 +401,64 @@ fn decode_texture(path: impl AsRef<Path>) -> Result<DecodedTexture, AssetLoadErr
         rgba.height(),
         rgba.into_raw(),
     ))
+}
+
+fn decode_texture_from_bytes(png_bytes: &[u8], index: usize) -> Result<DecodedTexture, AssetLoadError> {
+    let image = image::load_from_memory(png_bytes).map_err(|source| AssetLoadError::Image {
+        path: format!("texture[{index}]"),
+        source,
+    })?;
+    let rgba = image.to_rgba8();
+    Ok(DecodedTexture::new(
+        rgba.width(),
+        rgba.height(),
+        rgba.into_raw(),
+    ))
+}
+
+fn parse_model_from_bytes(
+    model_json: &str,
+    moc3_bytes: &[u8],
+    texture_pngs: &[&[u8]],
+) -> Result<ParsedModel, AssetLoadError> {
+    let model = Model3::from_json_str(model_json).map_err(AssetLoadError::Json)?;
+
+    let art_meshes = Moc3ArtMeshes::parse(moc3_bytes).map_err(AssetLoadError::Moc3)?;
+    let art_mesh_keyforms = Moc3ArtMeshKeyforms::parse(moc3_bytes).map_err(AssetLoadError::Moc3)?;
+    let deformers = Moc3Deformers::parse(moc3_bytes).map_err(AssetLoadError::Moc3)?;
+    let bindings = Moc3KeyformBindings::parse(moc3_bytes).map_err(AssetLoadError::Moc3)?;
+    let ids = Moc3Ids::parse(moc3_bytes).map_err(AssetLoadError::Moc3)?;
+    let offscreen = Moc3OffscreenInfo::parse(moc3_bytes).map_err(AssetLoadError::Moc3)?;
+    let glues = Moc3Glues::parse(moc3_bytes).map_err(AssetLoadError::Moc3)?;
+    let parts = Moc3Parts::parse(moc3_bytes).map_err(AssetLoadError::Moc3)?;
+    let canvas = Moc3CanvasInfo::parse(moc3_bytes).map_err(AssetLoadError::Moc3)?;
+    let draw_order_groups = Moc3DrawOrderGroups::parse(moc3_bytes).map_err(AssetLoadError::Moc3)?;
+
+    // Physics, pose, and user_data are JSON files referenced by the model.
+    // In the bytes-based API, these are not provided (optional features).
+    // Users can set them later via runtime methods if needed.
+
+    let textures = texture_pngs
+        .iter()
+        .enumerate()
+        .map(|(i, &bytes)| decode_texture_from_bytes(bytes, i))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(ParsedModel {
+        model,
+        canvas,
+        art_meshes,
+        art_mesh_keyforms,
+        deformers,
+        bindings,
+        ids,
+        offscreen,
+        glues,
+        parts,
+        draw_order_groups,
+        physics: None,
+        pose: None,
+        user_data: None,
+        textures,
+    })
 }

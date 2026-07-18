@@ -1170,6 +1170,7 @@ dependencies = [
  "clap",
  "glam",
  "image",
+ "js-sys",
  "png",
  "pollster",
  "rmcp",
@@ -1177,6 +1178,9 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
  "wgpu",
  "winit",
 ]

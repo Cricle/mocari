@@ -13,6 +13,7 @@ exclude = ["assets/", ".github/"]
 [features]
 default = []
 wgpu = ["dep:wgpu", "dep:pollster", "dep:winit"]
+web = ["wgpu", "dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:web-sys"]
 mcp = ["dep:rmcp", "dep:tokio", "dep:clap"]
 mcp-http = ["mcp", "rmcp/transport-streamable-http-server"]
 
@@ -29,6 +30,17 @@ tokio = { version = "1", features = ["full"], optional = true }
 clap = { version = "4", features = ["derive"], optional = true }
 pollster = { version = "0.4", optional = true }
 winit = { version = "0.30", optional = true }
+wasm-bindgen = { version = "0.2", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+js-sys = { version = "0.3", optional = true }
+
+[dependencies.web-sys]
+version = "0.3"
+features = [
+    "Window", "Request", "RequestInit", "RequestMode",
+    "Response", "Headers", "HtmlCanvasElement", "console",
+]
+optional = true
 
 [dev-dependencies]
 ab_glyph = "0.2.31"
@@ -51,6 +63,11 @@ required-features = ["wgpu"]
 [[example]]
 name = "desktop_pet"
 required-features = ["wgpu"]
+
+[[example]]
+name = "web_demo"
+crate-type = ["cdylib"]
+required-features = ["web"]
 
 [[test]]
 name = "mcp"
