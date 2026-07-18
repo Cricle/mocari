@@ -234,4 +234,37 @@ impl Live2dEngine {
                 &mut m.runtime
             })
     }
+
+    /// Renders all models to the surface.
+    /// Call this after `tick()` each frame.
+    pub fn render(&mut self) -> Result<(), EngineError> {
+        render::render_frame(
+            &mut self.ctx,
+            &self.renderer,
+            &mut self.models,
+            &mut self.render_callbacks,
+            &mut self.plugins,
+        )?;
+        self.needs_redraw = false;
+        Ok(())
+    }
+
+    /// Handles window resize.
+    /// Reconfigures the surface and updates model transforms.
+    pub fn resize(&mut self, size: winit::dpi::PhysicalSize<u32>) {
+        self.ctx.resize(size);
+        let config = self.ctx.config();
+        for m in &mut self.models {
+            m.transform.update_matrix(
+                self.ctx.queue(),
+                &model::fit_model_matrix(m.bounds, config.width, config.height, m.scale),
+            );
+        }
+        self.needs_redraw = true;
+    }
+
+    /// Registers a callback that runs after Live2D models render, before present.
+    pub fn on_render(&mut self, callback: impl FnMut(&mut RenderContext) + 'static) {
+        self.render_callbacks.push(Box::new(callback));
+    }
 }
