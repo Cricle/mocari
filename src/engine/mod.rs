@@ -82,7 +82,19 @@ impl Live2dEngine {
     /// Internally creates wgpu Instance, Surface, Adapter, Device, Queue,
     /// and configures the surface for rendering.
     pub async fn new(window: Arc<Window>) -> Result<Self, EngineError> {
-        todo!()
+        let ctx = WgpuContext::new(window).await?;
+        let renderer = WgpuLive2dRenderer::new(ctx.device(), ctx.config().format);
+
+        Ok(Self {
+            ctx,
+            renderer,
+            models: Vec::new(),
+            plugins: Vec::new(),
+            frame_callbacks: Vec::new(),
+            render_callbacks: Vec::new(),
+            last_delta: 0.0,
+            needs_redraw: false,
+        })
     }
 
     /// Returns a reference to the wgpu device.
