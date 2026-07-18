@@ -622,6 +622,43 @@ pub fn run_with_config(model_path: &str, config: RunConfig) -> Result<(), Engine
         .map_err(|e| EngineError::Surface(e.to_string()))
 }
 
+/// Runs a model as a desktop pet with default pet settings.
+///
+/// Creates a transparent, frameless, always-on-top window with click-through
+/// enabled. Clicking on the model area toggles click-through and allows
+/// dragging the window. Press Escape to quit.
+///
+/// ```no_run
+/// fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     mocari::engine::run_desktop_pet("assets/models/Ren/Ren.model3.json")
+/// }
+/// ```
+pub fn run_desktop_pet(model_path: &str) -> Result<(), EngineError> {
+    run_desktop_pet_with_config(model_path, DesktopPetConfig::default())
+}
+
+/// Runs a desktop pet with custom configuration.
+pub fn run_desktop_pet_with_config(
+    model_path: &str,
+    config: DesktopPetConfig,
+) -> Result<(), EngineError> {
+    let model_path = model_path.to_owned();
+
+    let event_loop = winit::event_loop::EventLoop::new()
+        .map_err(|e| EngineError::Surface(e.to_string()))?;
+    event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+
+    let mut app = DesktopPetApp {
+        model_path,
+        config,
+        state: None,
+    };
+
+    event_loop
+        .run_app(&mut app)
+        .map_err(|e| EngineError::Surface(e.to_string()))
+}
+
 struct App {
     model_path: String,
     config: RunConfig,
@@ -696,6 +733,143 @@ impl winit::application::ApplicationHandler for App {
                 state.engine.resize(state.window.inner_size());
                 state.window.request_redraw();
             }
+            winit::event::WindowEvent::RedrawRequested => {
+                let now = std::time::Instant::now();
+                let delta = now.duration_since(state.last_frame).as_secs_f32();
+                state.last_frame = now;
+
+                state.engine.tick(delta);
+                if let Err(e) = state.engine.render() {
+                    eprintln!("render failed: {e}");
+                    event_loop.exit();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn about_to_wait(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
+        if let Some(state) = self.state.as_ref()
+            && state.engine.needs_continuous_redraw()
+        {
+            state.window.request_redraw();
+        }
+    }
+}
+
+struct DesktopPetApp {
+    model_path: String,
+    config: DesktopPetConfig,
+    state: Option<DesktopPetState>,
+}
+
+struct DesktopPetState {
+    engine: Live2dEngine,
+    window: Arc<Window>,
+    last_frame: std::time::Instant,
+    is_interactive: bool,
+}
+
+impl winit::application::ApplicationHandler for DesktopPetApp {
+    fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        if self.state.is_some() {
+            return;
+        }
+
+        let window = match self.config.create_window(event_loop) {
+            Ok(w) => w,
+            Err(e) => {
+                eprintln!("failed to create window: {e}");
+                event_loop.exit();
+                return;
+            }
+        };
+
+        match pollster::block_on(Live2dEngine::new(window.clone())) {
+            Ok(mut engine) => {
+                engine.set_clear_color(self.config.clear_color);
+                if !self.model_path.is_empty()
+                    && let Err(e) = engine.load_model(&self.model_path)
+                {
+                    eprintln!("failed to load model: {e}");
+                    event_loop.exit();
+                    return;
+                }
+                window.request_redraw();
+                self.state = Some(DesktopPetState {
+                    engine,
+                    window,
+                    last_frame: std::time::Instant::now(),
+                    is_interactive: false,
+                });
+            }
+            Err(e) => {
+                eprintln!("failed to initialize engine: {e}");
+                event_loop.exit();
+            }
+        }
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        _window_id: winit::window::WindowId,
+        event: winit::event::WindowEvent,
+    ) {
+        let Some(state) = self.state.as_mut() else {
+            return;
+        };
+
+        match event {
+            winit::event::WindowEvent::CloseRequested => event_loop.exit(),
+
+            winit::event::WindowEvent::Resized(size) => {
+                state.engine.resize(size);
+                state.window.request_redraw();
+            }
+
+            winit::event::WindowEvent::ScaleFactorChanged { .. } => {
+                state.engine.resize(state.window.inner_size());
+                state.window.request_redraw();
+            }
+
+            winit::event::WindowEvent::CursorMoved { position, .. } => {
+                let size = state.window.inner_size();
+                let cx = size.width as f64 / 2.0;
+                let cy = size.height as f64 / 2.0;
+                let radius = (size.width.min(size.height) as f64) * 0.4;
+                let dx = position.x - cx;
+                let dy = position.y - cy;
+                let over_model = dx * dx + dy * dy < radius * radius;
+
+                if over_model && !state.is_interactive {
+                    state.is_interactive = true;
+                    let _ = state.engine.set_click_through(false);
+                } else if !over_model && state.is_interactive {
+                    state.is_interactive = false;
+                    let _ = state.engine.set_click_through(true);
+                }
+            }
+
+            winit::event::WindowEvent::MouseInput {
+                state: button_state,
+                button: winit::event::MouseButton::Left,
+                ..
+            } => {
+                if button_state == winit::event::ElementState::Pressed && state.is_interactive {
+                    let _ = state.window.drag_window();
+                }
+            }
+
+            winit::event::WindowEvent::KeyboardInput { event, .. } => {
+                if event.state == winit::event::ElementState::Pressed
+                    && event.logical_key
+                        == winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape)
+                {
+                    event_loop.exit();
+                }
+            }
+
             winit::event::WindowEvent::RedrawRequested => {
                 let now = std::time::Instant::now();
                 let delta = now.duration_since(state.last_frame).as_secs_f32();

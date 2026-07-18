@@ -16,6 +16,7 @@ pub struct DesktopPetConfig {
     pub click_through: bool,
     pub size: (u32, u32),
     pub title: String,
+    pub clear_color: Option<wgpu::Color>,
 }
 
 impl Default for DesktopPetConfig {
@@ -27,6 +28,7 @@ impl Default for DesktopPetConfig {
             click_through: true,
             size: (400, 400),
             title: "Live2D Pet".into(),
+            clear_color: Some(wgpu::Color::TRANSPARENT),
         }
     }
 }
@@ -63,6 +65,11 @@ impl DesktopPetConfig {
 
     pub fn title(mut self, title: impl Into<String>) -> Self {
         self.title = title.into();
+        self
+    }
+
+    pub fn clear_color(mut self, color: Option<wgpu::Color>) -> Self {
+        self.clear_color = color;
         self
     }
 
@@ -123,6 +130,7 @@ mod tests {
         assert!(cfg.click_through);
         assert_eq!(cfg.size, (400, 400));
         assert_eq!(cfg.title, "Live2D Pet");
+        assert_eq!(cfg.clear_color, Some(wgpu::Color::TRANSPARENT));
     }
 
     #[test]
