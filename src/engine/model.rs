@@ -263,19 +263,33 @@ pub(super) fn expression_paths(
         .collect()
 }
 
-/// Returns true if the model is actively animating.
+/// Returns true if the model has user-triggered animation (motion, expression).
+///
+/// Auto-systems (eye blink, breath) are excluded — they run during `tick` but
+/// don't keep the rendering loop alive when the model is otherwise idle.
 pub(super) fn is_animating(model: &LoadedModel) -> bool {
     model.animation.motion_player.is_some()
         || model.animation.expression_manager.active_expression_count() > 0
         || model.runtime.physics().is_some()
-        || model.animation.eye_blink.is_some()
-        || model.animation.breath.is_some()
 }
 
 /// Advances one model's animation state by `delta` seconds.
 /// Returns true if the model state changed (needs GPU update).
+///
+/// Auto-systems (eye blink, breath) always tick but don't trigger GPU updates
+/// on their own — the model stays truly idle when no motion/expression is active.
 pub(super) fn tick_model(model: &mut LoadedModel, delta: f32) -> bool {
-    if !model.dirty && !is_animating(model) {
+    let active = model.dirty || is_animating(model);
+
+    // Always tick auto-systems (cheap, keeps them in sync)
+    if let Some(eye_blink) = model.animation.eye_blink.as_mut() {
+        eye_blink.tick(delta);
+    }
+    if let Some(breath) = model.animation.breath.as_mut() {
+        breath.tick(delta);
+    }
+
+    if !active {
         return false;
     }
 
@@ -295,13 +309,11 @@ pub(super) fn tick_model(model: &mut LoadedModel, delta: f32) -> bool {
     model.animation.expression_manager.tick(delta);
     model.animation.expression_manager.apply(&mut model.runtime);
 
-    // Auto-systems
-    if let Some(eye_blink) = model.animation.eye_blink.as_mut() {
-        eye_blink.tick(delta);
+    // Apply auto-systems to runtime
+    if let Some(eye_blink) = model.animation.eye_blink.as_ref() {
         eye_blink.apply(&mut model.runtime);
     }
-    if let Some(breath) = model.animation.breath.as_mut() {
-        breath.tick(delta);
+    if let Some(breath) = model.animation.breath.as_ref() {
         breath.apply(&mut model.runtime);
     }
 
