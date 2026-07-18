@@ -7,7 +7,7 @@ pub(super) fn render_frame(
     ctx: &mut WgpuContext,
     renderer: &super::WgpuLive2dRenderer,
     models: &mut [LoadedModel],
-    render_callbacks: &mut [Box<dyn FnMut(&mut RenderContext)>],
+    render_callbacks: &mut [super::RenderCallback],
     plugins: &mut [Box<dyn super::Live2dPlugin>],
 ) -> Result<(), EngineError> {
     // Acquire surface texture

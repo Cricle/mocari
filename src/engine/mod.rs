@@ -8,7 +8,6 @@ mod render;
 pub use model::{ModelBounds, fit_model_matrix};
 pub use plugin::{FrameContext, Live2dPlugin, RenderContext};
 
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -19,8 +18,7 @@ use crate::auto::{Breath, BreathConfig, EyeBlink, EyeBlinkConfig};
 use crate::expression::ExpressionManager;
 use crate::motion::{MotionPlayer, load_motion};
 use crate::render::wgpu::{
-    WgpuClippingPlan, WgpuClippingResources, WgpuLive2dRenderer, WgpuMaskRenderTarget,
-    WgpuMeshBuffers, WgpuTexture, WgpuTransform, preferred_surface_format,
+    WgpuClippingPlan, WgpuLive2dRenderer, WgpuMeshBuffers,
 };
 
 use context::WgpuContext;
@@ -28,6 +26,9 @@ use model::{AnimationState, LoadedModel, MeshState};
 
 const MASK_TEXTURE_SIZE: u32 = 256;
 const MODEL_VIEW_FILL: f32 = 1.85;
+
+type FrameCallback = Box<dyn FnMut(&mut FrameContext)>;
+type RenderCallback = Box<dyn FnMut(&mut RenderContext)>;
 
 /// Errors produced by the high-level engine.
 #[derive(Debug, thiserror::Error)]
@@ -70,8 +71,8 @@ pub struct Live2dEngine {
     renderer: WgpuLive2dRenderer,
     models: Vec<LoadedModel>,
     plugins: Vec<Box<dyn Live2dPlugin>>,
-    frame_callbacks: Vec<Box<dyn FnMut(&mut FrameContext)>>,
-    render_callbacks: Vec<Box<dyn FnMut(&mut RenderContext)>>,
+    frame_callbacks: Vec<FrameCallback>,
+    render_callbacks: Vec<RenderCallback>,
     last_delta: f32,
     needs_redraw: bool,
 }
@@ -321,7 +322,7 @@ impl Live2dEngine {
 
     /// Returns true if any model is actively animating and needs continuous redraws.
     pub fn needs_continuous_redraw(&self) -> bool {
-        self.models.iter().any(|m| model::is_animating(m))
+        self.models.iter().any(model::is_animating)
     }
 
     /// Plays a motion from the specified group.

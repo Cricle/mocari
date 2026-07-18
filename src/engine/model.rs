@@ -18,7 +18,9 @@ pub(super) struct AnimationState {
     pub expression_manager: ExpressionManager,
     pub eye_blink: Option<EyeBlink>,
     pub breath: Option<Breath>,
+    #[allow(dead_code)]
     pub lip_sync: Option<LipSync>,
+    #[allow(dead_code)]
     pub mouse_tracker: Option<MouseTracker>,
 }
 
@@ -33,6 +35,7 @@ pub(super) struct MeshState {
 /// Internal representation of a loaded model with all resources.
 pub(super) struct LoadedModel {
     pub id: String,
+    #[allow(dead_code)]
     pub path: PathBuf,
     pub runtime: ModelRuntime,
     pub motions: BTreeMap<String, Vec<PathBuf>>,
