@@ -47,6 +47,10 @@ required-features = ["wgpu"]
 name = "show_model_raw"
 required-features = ["wgpu"]
 
+[[example]]
+name = "desktop_pet"
+required-features = ["wgpu"]
+
 [[test]]
 name = "mcp"
 path = "tests/mcp_tests.rs"
