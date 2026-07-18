@@ -159,11 +159,24 @@ impl Live2dEngine {
             &fit_model_matrix(bounds, config.width, config.height, 1.0),
         );
 
+        // Auto-configure eye blink if model has eye parameters
+        let has_eye_params = runtime.parameter_ids().iter().any(|id| {
+            matches!(id.as_str(), "ParamEyeLOpen" | "ParamEyeROpen" | "ParamEyeOpen")
+        });
+        let eye_blink = if has_eye_params {
+            Some(EyeBlink::with_defaults())
+        } else {
+            None
+        };
+
+        // Auto-configure breath
+        let breath = Some(Breath::with_defaults());
+
         let animation = AnimationState {
             motion_player: None,
             expression_manager: ExpressionManager::new(),
-            eye_blink: None,
-            breath: None,
+            eye_blink,
+            breath,
             lip_sync: None,
             mouse_tracker: None,
         };
