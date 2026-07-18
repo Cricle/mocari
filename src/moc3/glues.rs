@@ -1,6 +1,6 @@
 use crate::{
     Result,
-    core::{Vector2, affect_art_mesh_pair},
+    core::{Vec2, affect_art_mesh_pair},
 };
 
 use super::{
@@ -284,10 +284,10 @@ fn mutable_pair<T>(slice: &mut [T], a: usize, b: usize) -> Option<(&mut T, &mut 
     }
 }
 
-fn vertex_position(vertex: Moc3DrawableVertex) -> Vector2 {
-    Vector2::new(vertex.position()[0], vertex.position()[1])
+fn vertex_position(vertex: Moc3DrawableVertex) -> Vec2 {
+    Vec2::new(vertex.position()[0], vertex.position()[1])
 }
 
-fn vertex_with_position(vertex: Moc3DrawableVertex, position: Vector2) -> Moc3DrawableVertex {
-    Moc3DrawableVertex::new([position.x(), position.y()], vertex.uv())
+fn vertex_with_position(vertex: Moc3DrawableVertex, position: Vec2) -> Moc3DrawableVertex {
+    Moc3DrawableVertex::new([position.x, position.y], vertex.uv())
 }

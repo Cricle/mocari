@@ -100,6 +100,14 @@ impl MouseTracker {
         self.current_y = 0.0;
     }
 
+    /// Returns whether the tracker has non-zero offset from center.
+    pub fn is_active(&self) -> bool {
+        self.current_x.abs() > 0.001
+            || self.current_y.abs() > 0.001
+            || self.target_x.abs() > 0.001
+            || self.target_y.abs() > 0.001
+    }
+
     /// Sets the blend weight, clamped to 0.0..=1.0.
     pub fn set_weight(&mut self, weight: f32) {
         self.config.weight = weight.clamp(0.0, 1.0);

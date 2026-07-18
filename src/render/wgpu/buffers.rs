@@ -238,8 +238,9 @@ impl WgpuMeshBuffers {
         let mut uploads = 0;
         let mut bounds_changed = false;
         let mut visibility_changed = false;
+        let mut order_changed = false;
         for (drawable, mesh) in self.drawables.iter_mut().zip(meshes) {
-            if renderer_vertex_data_changed(drawable, mesh) {
+            if mesh.is_dirty() {
                 encode_vertices_from_drawable(mesh, &mut vertex_bytes);
                 if !vertex_bytes.is_empty() {
                     queue.write_buffer(&drawable.vertex_buffer, 0, &vertex_bytes);
@@ -253,13 +254,17 @@ impl WgpuMeshBuffers {
             let is_visible = !drawable.is_empty() && info.is_visible();
             bounds_changed |= drawable.info.bounds() != info.bounds();
             visibility_changed |= was_visible != is_visible;
+            order_changed |= drawable.info.draw_order() != info.draw_order()
+                || drawable.info.render_order() != info.render_order();
             drawable.info = info;
         }
-        self.draw_order_indices = draw_order_indices_from(
-            self.drawables.len(),
-            |index| self.drawables[index].draw_order(),
-            |index| self.drawables[index].render_order(),
-        );
+        if order_changed || uploads > 0 {
+            self.draw_order_indices = draw_order_indices_from(
+                self.drawables.len(),
+                |index| self.drawables[index].draw_order(),
+                |index| self.drawables[index].render_order(),
+            );
+        }
 
         Ok(WgpuMeshUpdate {
             uploaded_drawables: uploads,
@@ -389,41 +394,3 @@ pub fn create_wgpu_drawable_buffers(
     })
 }
 
-fn renderer_vertex_data_changed(drawable: &WgpuDrawableBuffers, mesh: &Moc3DrawableMesh) -> bool {
-    if drawable.vertex_count as usize != mesh.vertices().len() {
-        return true;
-    }
-    if drawable.vertex_bytes.len() != mesh.vertices().len() * DrawableVertex::STRIDE {
-        return true;
-    }
-
-    let opacity = mesh.opacity().to_ne_bytes();
-    let multiply = color_bytes(mesh.multiply_color());
-    let screen = color_bytes(mesh.screen_color());
-    drawable
-        .vertex_bytes
-        .chunks_exact(DrawableVertex::STRIDE)
-        .zip(mesh.vertices())
-        .any(|(bytes, vertex)| {
-            bytes[0..8] != vec2_bytes(vertex.position())
-                || bytes[8..16] != vec2_bytes(vertex.uv())
-                || bytes[16..20] != opacity
-                || bytes[20..32] != multiply
-                || bytes[32..44] != screen
-        })
-}
-
-fn vec2_bytes(values: [f32; 2]) -> [u8; 8] {
-    let mut bytes = [0; 8];
-    bytes[0..4].copy_from_slice(&values[0].to_ne_bytes());
-    bytes[4..8].copy_from_slice(&values[1].to_ne_bytes());
-    bytes
-}
-
-fn color_bytes(values: [f32; 3]) -> [u8; 12] {
-    let mut bytes = [0; 12];
-    bytes[0..4].copy_from_slice(&values[0].to_ne_bytes());
-    bytes[4..8].copy_from_slice(&values[1].to_ne_bytes());
-    bytes[8..12].copy_from_slice(&values[2].to_ne_bytes());
-    bytes
-}

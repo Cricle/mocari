@@ -1,12 +1,12 @@
-use super::math::Vector2;
+use super::math::Vec2;
 
 pub fn affect_art_mesh_pair(
-    a: Vector2,
-    b: Vector2,
+    a: Vec2,
+    b: Vec2,
     weight_a: f32,
     weight_b: f32,
     glue_opacity: f32,
-) -> (Vector2, Vector2) {
+) -> (Vec2, Vec2) {
     (
         a.lerp(b, weight_a * glue_opacity),
         b.lerp(a, weight_b * glue_opacity),
@@ -37,9 +37,9 @@ pub fn apply_parent_part_opacity(opacity: f32, parent_opacity: f32) -> f32 {
     opacity * parent_opacity
 }
 
-pub fn reverse_coordinate_y(vertices: &mut [Vector2]) {
+pub fn reverse_coordinate_y(vertices: &mut [Vec2]) {
     for vertex in vertices {
-        *vertex = Vector2::new(vertex.x(), -vertex.y());
+        *vertex = Vec2::new(vertex.x, -vertex.y);
     }
 }
 

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::core::{Matrix44, draw_order_from_raw};
+use crate::core::{Mat4, draw_order_from_raw};
 use crate::moc3::{Moc3DrawableBlendMode, Moc3DrawableMesh, Moc3DrawableVertex};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -344,8 +344,8 @@ pub struct ClippingContext {
     drawable_indices: Vec<usize>,
     layout: Option<ClippingLayout>,
     all_clipped_draw_rect: Option<ClippingRect>,
-    matrix_for_mask: Option<Matrix44>,
-    matrix_for_draw: Option<Matrix44>,
+    matrix_for_mask: Option<Mat4>,
+    matrix_for_draw: Option<Mat4>,
 }
 
 impl ClippingContext {
@@ -375,12 +375,12 @@ impl ClippingContext {
     }
 
     /// Returns the transform used when drawing mask geometry.
-    pub fn matrix_for_mask(&self) -> Option<Matrix44> {
+    pub fn matrix_for_mask(&self) -> Option<Mat4> {
         self.matrix_for_mask
     }
 
     /// Returns the transform used when drawing clipped geometry.
-    pub fn matrix_for_draw(&self) -> Option<Matrix44> {
+    pub fn matrix_for_draw(&self) -> Option<Mat4> {
         self.matrix_for_draw
     }
 }
@@ -550,7 +550,7 @@ fn clipped_draw_total_bounds_from(
     Ok(bounds)
 }
 
-fn clipping_matrices(bounds: ClippingRect, layout: ClippingRect) -> Option<(Matrix44, Matrix44)> {
+fn clipping_matrices(bounds: ClippingRect, layout: ClippingRect) -> Option<(Mat4, Mat4)> {
     if bounds.width <= 0.0 || bounds.height <= 0.0 {
         return None;
     }
@@ -561,16 +561,17 @@ fn clipping_matrices(bounds: ClippingRect, layout: ClippingRect) -> Option<(Matr
     let normalized_translate_y = -bounds.y * scale_y + layout.y;
     let texture_translate_y = 1.0 - layout.y + bounds.y * scale_y;
 
-    let mut matrix_for_draw = Matrix44::identity();
-    matrix_for_draw.scale(scale_x, -scale_y);
-    matrix_for_draw.translate(draw_translate_x, texture_translate_y);
+    let mut matrix_for_draw = Mat4::IDENTITY;
+    matrix_for_draw.x_axis.x = scale_x;
+    matrix_for_draw.y_axis.y = -scale_y;
+    matrix_for_draw.w_axis.x = draw_translate_x;
+    matrix_for_draw.w_axis.y = texture_translate_y;
 
-    let mut matrix_for_mask = Matrix44::identity();
-    matrix_for_mask.scale(scale_x * 2.0, scale_y * 2.0);
-    matrix_for_mask.translate(
-        draw_translate_x * 2.0 - 1.0,
-        normalized_translate_y * 2.0 - 1.0,
-    );
+    let mut matrix_for_mask = Mat4::IDENTITY;
+    matrix_for_mask.x_axis.x = scale_x * 2.0;
+    matrix_for_mask.y_axis.y = scale_y * 2.0;
+    matrix_for_mask.w_axis.x = draw_translate_x * 2.0 - 1.0;
+    matrix_for_mask.w_axis.y = normalized_translate_y * 2.0 - 1.0;
 
     Some((matrix_for_mask, matrix_for_draw))
 }

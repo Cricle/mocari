@@ -1,4 +1,4 @@
-use crate::{core::Matrix44, moc3::Moc3DrawableBlendMode};
+use crate::{core::Mat4, moc3::Moc3DrawableBlendMode};
 
 use crate::render::common::{
     ClippingLayout as WgpuClippingLayout, ClippingLayoutError as WgpuClippingLayoutError,
@@ -276,7 +276,7 @@ impl WgpuLive2dRenderer {
             "live2d.masked.pipeline.multiplicative",
         );
         let identity_transform =
-            create_wgpu_transform(device, &transform_bind_group_layout, &Matrix44::identity());
+            create_wgpu_transform(device, &transform_bind_group_layout, &Mat4::IDENTITY);
 
         Self {
             normal_pipeline,
@@ -370,7 +370,7 @@ impl WgpuLive2dRenderer {
         })
     }
 
-    pub fn create_transform(&self, device: &wgpu::Device, matrix: &Matrix44) -> WgpuTransform {
+    pub fn create_transform(&self, device: &wgpu::Device, matrix: &Mat4) -> WgpuTransform {
         create_wgpu_transform(device, &self.transform_bind_group_layout, matrix)
     }
 
@@ -385,7 +385,7 @@ impl WgpuLive2dRenderer {
     pub fn create_clip_params(
         &self,
         device: &wgpu::Device,
-        matrix: &Matrix44,
+        matrix: &Mat4,
         channel: WgpuMaskChannel,
         inverted: bool,
     ) -> WgpuClipParams {

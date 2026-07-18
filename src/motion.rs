@@ -211,10 +211,22 @@ impl MotionPlayer {
                         "DrawOrder" => {
                             runtime.set_drawable_draw_order_override(drawable_index, sampled);
                         }
-                        _ => {} // VertexPosition not yet supported
+                        _ => {}
                     }
                 }
                 _ => {}
+            }
+        }
+
+        // Apply vertex position deformation curves
+        for vertex_curve in self.motion.vertex_curves() {
+            let drawable_id = vertex_curve.id();
+            let Some(drawable_index) = runtime.drawable_index(drawable_id) else {
+                continue;
+            };
+            let sampled = vertex_curve.sample(self.time);
+            if !sampled.is_empty() {
+                runtime.set_drawable_vertex_override(drawable_index, sampled.to_vec());
             }
         }
     }

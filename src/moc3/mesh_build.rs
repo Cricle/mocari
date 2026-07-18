@@ -1,4 +1,4 @@
-use crate::core::Vector2;
+use crate::core::Vec2;
 
 use super::{
     Moc3ArtMeshKeyformInfo, Moc3ArtMeshKeyforms, Moc3ArtMeshes, Moc3Deformers, Moc3DrawableMesh,
@@ -8,7 +8,7 @@ use super::{
 
 #[derive(Debug, Default, Clone)]
 pub(crate) struct Moc3MeshUpdateScratch {
-    positions: Vec<Vector2>,
+    positions: Vec<Vec2>,
 }
 
 pub fn build_moc3_drawable_meshes_for_default_pose(
@@ -209,7 +209,7 @@ fn build_moc3_drawable_mesh_for_pose(
         .iter()
         .zip(positions)
         .map(|(vertex, position)| {
-            Moc3DrawableVertex::new([position.x(), -position.y()], vertex.uv())
+            Moc3DrawableVertex::new([position.x, -position.y], vertex.uv())
         })
         .collect();
 
@@ -274,7 +274,7 @@ fn update_moc3_drawable_mesh_for_pose(
     }
     for (vertex, position) in mesh.vertices_mut().iter_mut().zip(&scratch.positions) {
         let uv = vertex.uv();
-        *vertex = Moc3DrawableVertex::new([position.x(), -position.y()], uv);
+        *vertex = Moc3DrawableVertex::new([position.x, -position.y], uv);
     }
 
     mesh.set_opacity(opacity);
@@ -326,7 +326,7 @@ fn interpolate_art_mesh_positions(
     keyforms: &Moc3ArtMeshKeyforms,
     art_mesh_index: usize,
     slots: &[Moc3KeyformSlot],
-) -> Option<Vec<Vector2>> {
+) -> Option<Vec<Vec2>> {
     let mut out = Vec::new();
     interpolate_art_mesh_positions_into(keyforms, art_mesh_index, slots, &mut out)?;
     Some(out)
@@ -336,11 +336,11 @@ fn interpolate_art_mesh_positions_into(
     keyforms: &Moc3ArtMeshKeyforms,
     art_mesh_index: usize,
     slots: &[Moc3KeyformSlot],
-    out: &mut Vec<Vector2>,
+    out: &mut Vec<Vec2>,
 ) -> Option<()> {
     let first = keyforms.art_mesh_keyform_positions(art_mesh_index, slots.first()?.local_index)?;
     out.clear();
-    out.resize(first.len().checked_div(2)?, Vector2::default());
+    out.resize(first.len().checked_div(2)?, Vec2::ZERO);
 
     for slot in slots {
         let positions = keyforms.art_mesh_keyform_positions(art_mesh_index, slot.local_index)?;
@@ -348,9 +348,9 @@ fn interpolate_art_mesh_positions_into(
             return None;
         }
         for (target, position) in out.iter_mut().zip(positions.chunks_exact(2)) {
-            *target = Vector2::new(
-                target.x() + position[0] * slot.weight,
-                target.y() + position[1] * slot.weight,
+            *target = Vec2::new(
+                target.x + position[0] * slot.weight,
+                target.y + position[1] * slot.weight,
             );
         }
     }

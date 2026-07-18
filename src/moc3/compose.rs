@@ -1,5 +1,5 @@
 use crate::core::{
-    Vector2, WarpInterpolation, rotation_deformer_transform_point, warp_deformer_transform_target,
+    Vec2, WarpInterpolation, rotation_deformer_transform_point, warp_deformer_transform_target,
 };
 
 const ROTATION_PROBE_ITERATIONS: usize = 10;
@@ -11,8 +11,8 @@ const DEFAULT_SCREEN_COLOR: [f32; 3] = [0.0, 0.0, 0.0];
 pub(super) fn parent_rotation_angle(
     composed: &[Option<ComposedDeformer>],
     parent_index: i32,
-    origin_world: Vector2,
-    translation: Vector2,
+    origin_world: Vec2,
+    translation: Vec2,
 ) -> Option<f32> {
     let step = match parent_deformer(composed, parent_index) {
         Some(ComposedDeformer::Rotation(_)) => ROTATION_PROBE_STEP_ROTATION_PARENT,
@@ -20,31 +20,31 @@ pub(super) fn parent_rotation_angle(
     };
 
     let mut scale = 1.0f32;
-    let mut direction = Vector2::default();
+    let mut direction = Vec2::ZERO;
     for _ in 0..ROTATION_PROBE_ITERATIONS {
         let offset = step * scale;
 
         let forward = apply_composed_parent(
             composed,
             parent_index,
-            Vector2::new(translation.x(), translation.y() + offset),
+            Vec2::new(translation.x, translation.y + offset),
         )?;
-        let dx = forward.x() - origin_world.x();
-        let dy = forward.y() - origin_world.y();
+        let dx = forward.x - origin_world.x;
+        let dy = forward.y - origin_world.y;
         if dx != 0.0 || dy != 0.0 {
-            direction = Vector2::new(dx, dy);
+            direction = Vec2::new(dx, dy);
             break;
         }
 
         let backward = apply_composed_parent(
             composed,
             parent_index,
-            Vector2::new(translation.x(), translation.y() - offset),
+            Vec2::new(translation.x, translation.y - offset),
         )?;
-        let dx = backward.x() - origin_world.x();
-        let dy = backward.y() - origin_world.y();
+        let dx = backward.x - origin_world.x;
+        let dy = backward.y - origin_world.y;
         if dx != 0.0 || dy != 0.0 {
-            direction = Vector2::new(-dx, -dy);
+            direction = Vec2::new(-dx, -dy);
             break;
         }
 
@@ -52,7 +52,7 @@ pub(super) fn parent_rotation_angle(
     }
 
     Some(wrap_angle(
-        direction.y().atan2(direction.x()) - step.atan2(0.0),
+        direction.y.atan2(direction.x) - step.atan2(0.0),
     ))
 }
 
@@ -107,7 +107,7 @@ impl ComposedDeformer {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct ComposedWarp {
-    pub(super) grid: Vec<Vector2>,
+    pub(super) grid: Vec<Vec2>,
     pub(super) cols: usize,
     pub(super) rows: usize,
     pub(super) scale_accum: f32,
@@ -118,7 +118,7 @@ pub(super) struct ComposedWarp {
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(super) struct ComposedRotation {
-    pub(super) origin: Vector2,
+    pub(super) origin: Vec2,
     pub(super) angle_degrees: f32,
     pub(super) scale: f32,
     pub(super) flip_x: bool,
@@ -142,7 +142,7 @@ impl ComposedDeformers {
     pub(super) fn transform_vertices(
         &self,
         parent_deformer_index: i32,
-        vertices: &mut [Vector2],
+        vertices: &mut [Vec2],
     ) -> Option<()> {
         if parent_deformer_index < 0 {
             return Some(());
@@ -183,7 +183,7 @@ impl ComposedDeformers {
     }
 }
 
-pub(super) fn apply_one(deformer: &ComposedDeformer, point: Vector2) -> Option<Vector2> {
+pub(super) fn apply_one(deformer: &ComposedDeformer, point: Vec2) -> Option<Vec2> {
     match deformer {
         ComposedDeformer::Warp(warp) => warp_deformer_transform_target(
             point,
@@ -206,8 +206,8 @@ pub(super) fn apply_one(deformer: &ComposedDeformer, point: Vector2) -> Option<V
 pub(super) fn apply_composed_parent(
     composed: &[Option<ComposedDeformer>],
     parent_index: i32,
-    point: Vector2,
-) -> Option<Vector2> {
+    point: Vec2,
+) -> Option<Vec2> {
     if parent_index < 0 {
         return Some(point);
     }

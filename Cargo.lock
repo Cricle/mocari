@@ -780,6 +780,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "glam"
+version = "0.33.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f22fb22f065b308be0d8724e3706c7fa3fc2a6c7d6899df4cad7860e7a75436"
+
+[[package]]
 name = "glow"
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1162,6 +1168,7 @@ version = "0.4.0"
 dependencies = [
  "ab_glyph",
  "clap",
+ "glam",
  "image",
  "png",
  "pollster",

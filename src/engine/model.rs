@@ -103,7 +103,7 @@ pub fn fit_model_matrix(
     surface_width: u32,
     surface_height: u32,
     scale: f32,
-) -> crate::core::Matrix44 {
+) -> crate::core::Mat4 {
     let aspect = surface_width as f32 / surface_height as f32;
     let view_fill = MODEL_VIEW_FILL * scale.clamp(0.5, 2.0);
     let fit_x = view_fill / (bounds.width() * aspect);
@@ -111,15 +111,18 @@ pub fn fit_model_matrix(
     let scale_y = fit_x.min(fit_y);
     let scale_x = scale_y / aspect;
 
-    let mut matrix = crate::core::Matrix44::identity();
-    matrix.scale(scale_x, scale_y);
-    matrix.translate(-bounds.center_x() * scale_x, -bounds.center_y() * scale_y);
+    let mut matrix = crate::core::Mat4::IDENTITY;
+    matrix.x_axis.x = scale_x;
+    matrix.y_axis.y = scale_y;
+    matrix.w_axis.x = -bounds.center_x() * scale_x;
+    matrix.w_axis.y = -bounds.center_y() * scale_y;
     matrix
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::Mat4Ext;
 
     #[test]
     fn model_bounds_from_empty_drawables_returns_none() {
@@ -270,6 +273,8 @@ pub(super) fn is_animating(model: &LoadedModel) -> bool {
         || model.runtime.physics().is_some()
         || model.animation.eye_blink.is_some()
         || model.animation.breath.is_some()
+        || model.animation.lip_sync.as_ref().is_some_and(|l| l.is_active())
+        || model.animation.mouse_tracker.as_ref().is_some_and(|m| m.is_active())
 }
 
 /// Advances one model's animation state by `delta` seconds.
@@ -304,6 +309,14 @@ pub(super) fn tick_model(model: &mut LoadedModel, delta: f32) -> bool {
         breath.tick(delta);
         breath.apply(&mut model.runtime);
     }
+    if let Some(lip_sync) = model.animation.lip_sync.as_mut() {
+        lip_sync.tick(delta);
+        lip_sync.apply(&mut model.runtime);
+    }
+    if let Some(mouse_tracker) = model.animation.mouse_tracker.as_mut() {
+        mouse_tracker.tick(delta);
+        mouse_tracker.apply(&mut model.runtime);
+    }
 
     // Parameter overrides + physics + pose
     model.runtime.apply_parameter_overrides();
@@ -324,12 +337,21 @@ pub(super) fn update_model_gpu(
     model: &mut LoadedModel,
 ) -> Result<(), super::EngineError> {
     let update = match model.mesh.mesh_buffers.update_drawables(queue, model.runtime.meshes()) {
-        Ok(update) => update,
+        Ok(update) => {
+            // Clear dirty flags after successful GPU upload
+            for mesh in model.runtime.meshes_mut() {
+                mesh.clear_dirty();
+            }
+            update
+        }
         Err(_) => {
             let mesh_buffers = WgpuMeshBuffers::from_drawables(device, model.runtime.meshes())
                 .ok_or(crate::render::wgpu::WgpuRenderError::MissingDrawable { drawable_index: 0 })?;
             model.mesh.mesh_buffers = mesh_buffers;
             rebuild_clipping(renderer, device, model)?;
+            for mesh in model.runtime.meshes_mut() {
+                mesh.clear_dirty();
+            }
             return Ok(());
         }
     };

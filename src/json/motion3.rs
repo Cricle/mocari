@@ -4,6 +4,7 @@ use crate::{Error, Result};
 
 const FORMAT: &str = "motion3.json";
 const SUPPORTED_VERSION: u32 = 3;
+const VERTEX_POSITION_TARGET: &str = "Drawable";
 
 #[derive(Debug, Clone, PartialEq)]
 /// Parsed Cubism `motion3.json` data.
@@ -11,6 +12,7 @@ pub struct Motion3 {
     version: u32,
     meta: MotionMeta,
     curves: Vec<MotionCurve>,
+    vertex_curves: Vec<VertexMotionCurve>,
     user_data: Vec<MotionUserData>,
 }
 
@@ -30,16 +32,23 @@ impl Motion3 {
         }
 
         let are_beziers_restricted = raw.meta.are_beziers_restricted;
-        let curves = raw
-            .curves
-            .into_iter()
-            .map(|curve| MotionCurve::from_raw(curve, are_beziers_restricted))
-            .collect::<Result<Vec<_>>>()?;
+        let mut curves = Vec::new();
+        let mut vertex_curves = Vec::new();
+
+        for raw_curve in raw.curves {
+            if raw_curve.target == VERTEX_POSITION_TARGET {
+                vertex_curves
+                    .push(VertexMotionCurve::from_raw(raw_curve, are_beziers_restricted)?);
+            } else {
+                curves.push(MotionCurve::from_raw(raw_curve, are_beziers_restricted)?);
+            }
+        }
 
         Ok(Self {
             version: raw.version,
             meta: raw.meta,
             curves,
+            vertex_curves,
             user_data: raw.user_data,
         })
     }
@@ -62,6 +71,11 @@ impl Motion3 {
     /// Returns user data events in this motion.
     pub fn user_data(&self) -> &[MotionUserData] {
         &self.user_data
+    }
+
+    /// Returns vertex position deformation curves in this motion.
+    pub fn vertex_curves(&self) -> &[VertexMotionCurve] {
+        &self.vertex_curves
     }
 }
 
@@ -234,7 +248,154 @@ impl MotionCurve {
     }
 }
 
-/// Cubism sine easing used for fades.
+/// A vertex position deformation curve from a motion file.
+///
+/// Each keyframe contains all vertex positions (x, y pairs) for a drawable
+/// at a given time. The `id` field contains the drawable id.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VertexMotionCurve {
+    id: String,
+    first_values: Vec<f32>,
+    segments: Vec<VertexMotionSegment>,
+    are_beziers_restricted: bool,
+}
+
+impl VertexMotionCurve {
+    /// Returns the target drawable id.
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// Samples vertex positions at a time in seconds.
+    ///
+    /// Returns `None` if the curve has no data. The returned slice contains
+    /// interleaved x, y pairs for each vertex.
+    pub fn sample(&self, time: f32) -> &[f32] {
+        if self.segments.is_empty() {
+            return &self.first_values;
+        }
+
+        if time <= self.segments[0].start_time {
+            return &self.first_values;
+        }
+
+        for segment in &self.segments {
+            if time < segment.end_time {
+                return &segment.values;
+            }
+        }
+
+        self.segments
+            .last()
+            .map(|s| s.values.as_slice())
+            .unwrap_or(&self.first_values)
+    }
+
+    fn from_raw(raw: RawMotionCurve, are_beziers_restricted: bool) -> Result<Self> {
+        let (first_values, segments) = parse_vertex_segments(&raw.segments)?;
+        Ok(Self {
+            id: raw.id,
+            first_values,
+            segments,
+            are_beziers_restricted,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct VertexMotionSegment {
+    start_time: f32,
+    end_time: f32,
+    values: Vec<f32>,
+}
+
+fn parse_vertex_segments(values: &[f32]) -> Result<(Vec<f32>, Vec<VertexMotionSegment>)> {
+    // First keyframe: [time, v0, v1, v2, ...] — no segment type marker
+    if values.len() < 3 {
+        return Err(invalid_segments(
+            "vertex segments must start with time + at least 2 values",
+        ));
+    }
+
+    let time0 = values[0];
+    // Count vertex values in first keyframe by validating the remaining data.
+    // After the first keyframe, each segment is: [seg_type, time, v0, v1, ...]
+    // with the same number of vertex values per keyframe.
+    // Try stride from 2 upward; the correct stride lets the rest parse cleanly.
+    let best_stride = find_vertex_stride(&values[1..]).ok_or_else(|| {
+        invalid_segments("cannot determine vertex count for vertex position curve")
+    })?;
+
+    let first_values = values[1..1 + best_stride].to_vec();
+    let mut cursor = 1 + best_stride;
+    let mut segments = Vec::new();
+    let mut prev_time = time0;
+
+    while cursor < values.len() {
+        let _seg = segment_type(values[cursor])?;
+        cursor += 1;
+        if cursor >= values.len() {
+            return Err(invalid_segments("vertex segment missing time"));
+        }
+        let time = values[cursor];
+        cursor += 1;
+        if cursor + best_stride > values.len() {
+            return Err(invalid_segments("vertex segment has incomplete values"));
+        }
+        let vals = values[cursor..cursor + best_stride].to_vec();
+        cursor += best_stride;
+
+        segments.push(VertexMotionSegment {
+            start_time: prev_time,
+            end_time: time,
+            values: vals,
+        });
+        prev_time = time;
+    }
+
+    Ok((first_values, segments))
+}
+
+/// Finds the number of vertex values per keyframe by checking which stride
+/// lets the rest of the data parse as valid segments.
+fn find_vertex_stride(remaining: &[f32]) -> Option<usize> {
+    // remaining = values after the first time (i.e., [v0, v1, ..., seg, time, v0, ...])
+    // We need to find how many vertex values come before the first segment marker.
+    // Try each possible stride and check if the data parses cleanly.
+    let max_stride = remaining.len().min(2048); // reasonable upper bound
+    for stride in 2..=max_stride {
+        // After the first keyframe's values, check if the next value is a valid segment type
+        let next = remaining.get(stride)?;
+        if next.fract() != 0.0 || !(0.0..=3.0).contains(next) {
+            continue;
+        }
+        // Verify the full data parses with this stride
+        if validates_vertex_stride(remaining, stride) {
+            return Some(stride);
+        }
+    }
+    None
+}
+
+/// Checks whether the remaining data can be parsed with the given vertex stride.
+fn validates_vertex_stride(remaining: &[f32], stride: usize) -> bool {
+    // Skip first keyframe values
+    let mut cursor = stride;
+    while cursor < remaining.len() {
+        // Need segment type + time + stride values
+        if cursor + 2 + stride > remaining.len() {
+            return false;
+        }
+        let seg_type = remaining[cursor] as u32;
+        if remaining[cursor].fract() != 0.0 || seg_type > 3 {
+            return false;
+        }
+        cursor += 1; // seg type
+        cursor += 1; // time
+        cursor += stride; // vertex values
+    }
+    true
+}
 pub fn easing_sine(value: f32) -> f32 {
     if value < 0.0 {
         return 0.0;

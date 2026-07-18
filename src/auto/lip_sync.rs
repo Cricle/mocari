@@ -101,6 +101,11 @@ impl LipSync {
         self.current_amplitude = 0.0;
     }
 
+    /// Returns whether the lip sync has non-zero amplitude.
+    pub fn is_active(&self) -> bool {
+        self.current_amplitude > 0.001 || self.target_amplitude > 0.001
+    }
+
     /// Sets the blend weight, clamped to 0.0..=1.0.
     pub fn set_weight(&mut self, weight: f32) {
         self.config.weight = weight.clamp(0.0, 1.0);

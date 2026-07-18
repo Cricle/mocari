@@ -1,4 +1,4 @@
-use crate::{Result, core::Vector2};
+use crate::{Result, core::Vec2};
 
 use super::{
     Moc3CountInfo, Moc3Header, Moc3SectionOffsets,
@@ -60,7 +60,7 @@ impl Moc3DeformerKind {
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct InterpolatedRotation {
     angle_degrees: f32,
-    translation: Vector2,
+    translation: Vec2,
     scale: f32,
     flip_x: bool,
     flip_y: bool,
@@ -453,11 +453,11 @@ impl Moc3Deformers {
         warp_index: usize,
         bindings: &Moc3KeyformBindings,
         parameter_values: &[f32],
-    ) -> Option<Vec<Vector2>> {
+    ) -> Option<Vec<Vec2>> {
         let slots = self.warp_keyform_slots(warp_index, bindings, parameter_values)?;
         let begin = usize::try_from(*self.warp_keyform_begin_indices.get(warp_index)?).ok()?;
         let vertex_count = usize::try_from(*self.warp_vertex_counts.get(warp_index)?).ok()?;
-        let mut grid = vec![Vector2::default(); vertex_count];
+        let mut grid = vec![Vec2::ZERO; vertex_count];
 
         for slot in slots {
             let keyform_index = begin.checked_add(slot.local_index)?;
@@ -466,9 +466,9 @@ impl Moc3Deformers {
                 return None;
             }
             for (target, source) in grid.iter_mut().zip(source) {
-                *target = Vector2::new(
-                    target.x() + source.x() * slot.weight,
-                    target.y() + source.y() * slot.weight,
+                *target = Vec2::new(
+                    target.x + source.x * slot.weight,
+                    target.y + source.y * slot.weight,
                 );
             }
         }
@@ -486,7 +486,7 @@ impl Moc3Deformers {
         let begin =
             usize::try_from(*self.rotation_keyform_begin_indices.get(rotation_index)?).ok()?;
         let mut angle = 0.0f32;
-        let mut translation = Vector2::default();
+        let mut translation = Vec2::ZERO;
         let mut scale = 0.0f32;
         let mut flip_x = 0.0f32;
         let mut flip_y = 0.0f32;
@@ -494,10 +494,10 @@ impl Moc3Deformers {
         for slot in slots {
             let keyform_index = begin.checked_add(slot.local_index)?;
             angle += *self.rotation_keyform_angles.get(keyform_index)? * slot.weight;
-            translation = Vector2::new(
-                translation.x()
+            translation = Vec2::new(
+                translation.x
                     + *self.rotation_keyform_origin_xs.get(keyform_index)? * slot.weight,
-                translation.y()
+                translation.y
                     + *self.rotation_keyform_origin_ys.get(keyform_index)? * slot.weight,
             );
             scale += *self.rotation_keyform_scales.get(keyform_index)? * slot.weight;
@@ -583,7 +583,7 @@ impl Moc3Deformers {
         )
     }
 
-    fn warp_grid(&self, warp_index: usize, keyform_index: usize) -> Option<Vec<Vector2>> {
+    fn warp_grid(&self, warp_index: usize, keyform_index: usize) -> Option<Vec<Vec2>> {
         let start = usize::try_from(
             *self
                 .warp_keyform_position_begin_indices
@@ -599,7 +599,7 @@ impl Moc3Deformers {
         Some(
             values
                 .chunks_exact(2)
-                .map(|xy| Vector2::new(xy[0], xy[1]))
+                .map(|xy| Vec2::new(xy[0], xy[1]))
                 .collect(),
         )
     }

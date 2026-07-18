@@ -47,6 +47,7 @@ pub struct Moc3DrawableMesh {
     vertices: Vec<Moc3DrawableVertex>,
     indices: Vec<u16>,
     masks: Vec<i32>,
+    dirty: bool,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -119,6 +120,7 @@ impl Moc3DrawableMesh {
             vertices,
             indices,
             masks,
+            dirty: true,
         }
     }
 
@@ -139,10 +141,12 @@ impl Moc3DrawableMesh {
 
     pub(crate) fn set_multiply_color(&mut self, color: [f32; 3]) {
         self.multiply_color = color;
+        self.dirty = true;
     }
 
     pub(crate) fn set_screen_color(&mut self, color: [f32; 3]) {
         self.screen_color = color;
+        self.dirty = true;
     }
 
     /// Returns the raw drawable flags from the model.
@@ -172,6 +176,7 @@ impl Moc3DrawableMesh {
 
     pub(crate) fn set_opacity(&mut self, opacity: f32) {
         self.opacity = opacity;
+        self.dirty = true;
     }
 
     /// Returns the raw draw order value.
@@ -181,6 +186,7 @@ impl Moc3DrawableMesh {
 
     pub(crate) fn set_draw_order(&mut self, draw_order: f32) {
         self.draw_order = draw_order;
+        self.dirty = true;
     }
 
     /// Returns the resolved render order value.
@@ -190,6 +196,7 @@ impl Moc3DrawableMesh {
 
     pub(crate) fn set_render_order(&mut self, render_order: i32) {
         self.render_order = render_order;
+        self.dirty = true;
     }
 
     /// Returns mesh vertices in model coordinates.
@@ -198,6 +205,7 @@ impl Moc3DrawableMesh {
     }
 
     pub(crate) fn vertices_mut(&mut self) -> &mut [Moc3DrawableVertex] {
+        self.dirty = true;
         &mut self.vertices
     }
 
@@ -209,6 +217,16 @@ impl Moc3DrawableMesh {
     /// Returns drawable indices used as masks for this drawable.
     pub fn masks(&self) -> &[i32] {
         &self.masks
+    }
+
+    /// Returns whether this mesh has been modified since the last GPU upload.
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    /// Clears the dirty flag. Call after uploading to GPU.
+    pub fn clear_dirty(&mut self) {
+        self.dirty = false;
     }
 }
 

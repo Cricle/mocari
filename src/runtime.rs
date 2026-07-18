@@ -142,6 +142,7 @@ pub struct ModelRuntime {
     drawable_screen_overrides: Vec<Option<[f32; 3]>>,
     drawable_opacity_overrides: Vec<Option<f32>>,
     drawable_draw_order_overrides: Vec<Option<f32>>,
+    drawable_vertex_overrides: Vec<Option<Vec<f32>>>,
     user_data: Option<UserData3>,
 }
 
@@ -213,6 +214,7 @@ impl ModelRuntime {
             drawable_screen_overrides: vec![None; drawable_count],
             drawable_opacity_overrides: vec![None; drawable_count],
             drawable_draw_order_overrides: vec![None; drawable_count],
+            drawable_vertex_overrides: vec![None; drawable_count],
             user_data: None,
         };
         runtime.update_meshes()?;
@@ -762,6 +764,14 @@ impl ModelRuntime {
             if let Some(draw_order) = self.drawable_draw_order_overrides.get(index).and_then(|v| *v) {
                 mesh.set_draw_order(draw_order);
             }
+            if let Some(positions) = self.drawable_vertex_overrides.get(index).and_then(|v| v.as_ref()) {
+                let vertices = mesh.vertices_mut();
+                for (i, vertex) in vertices.iter_mut().enumerate() {
+                    let px = positions.get(i * 2).copied().unwrap_or(vertex.position()[0]);
+                    let py = positions.get(i * 2 + 1).copied().unwrap_or(vertex.position()[1]);
+                    *vertex = Moc3DrawableVertex::new([px, py], vertex.uv());
+                }
+            }
         }
     }
 
@@ -918,12 +928,29 @@ impl ModelRuntime {
         true
     }
 
-    /// Clears all drawable motion overrides (opacity, draw order).
+    /// Clears all drawable motion overrides (opacity, draw order, vertex positions).
     ///
     /// Call this at the start of each frame before applying motion players.
     pub fn clear_drawable_motion_overrides(&mut self) {
         self.drawable_opacity_overrides.fill(None);
         self.drawable_draw_order_overrides.fill(None);
+        self.drawable_vertex_overrides.iter_mut().for_each(|o| *o = None);
+    }
+
+    /// Sets a vertex position override for a drawable.
+    ///
+    /// `positions` should contain interleaved x, y pairs for each vertex.
+    pub fn set_drawable_vertex_override(&mut self, index: usize, positions: Vec<f32>) -> bool {
+        let Some(slot) = self.drawable_vertex_overrides.get_mut(index) else {
+            return false;
+        };
+        *slot = Some(positions);
+        true
+    }
+
+    /// Clears all vertex position overrides.
+    pub fn clear_drawable_vertex_overrides(&mut self) {
+        self.drawable_vertex_overrides.iter_mut().for_each(|o| *o = None);
     }
 
     /// Returns the current multiply color on a mesh (after update_meshes).
@@ -942,6 +969,11 @@ impl ModelRuntime {
     /// backend before issuing draw calls.
     pub fn meshes(&self) -> &[Moc3DrawableMesh] {
         &self.meshes
+    }
+
+    /// Returns a mutable reference to the drawable meshes.
+    pub fn meshes_mut(&mut self) -> &mut [Moc3DrawableMesh] {
+        &mut self.meshes
     }
 
     fn parameter_range_by_index(&self, index: usize) -> Option<(f32, f32)> {

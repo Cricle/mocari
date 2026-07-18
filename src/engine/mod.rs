@@ -16,7 +16,7 @@ use std::sync::Arc;
 use winit::window::Window;
 
 use crate::assets::load_model_runtime;
-use crate::auto::{Breath, BreathConfig, EyeBlink, EyeBlinkConfig};
+use crate::auto::{Breath, BreathConfig, EyeBlink, EyeBlinkConfig, LipSync, LipSyncConfig, MouseTracker, MouseTrackerConfig};
 use crate::expression::ExpressionManager;
 use crate::motion::{MotionPlayer, load_motion};
 use crate::render::wgpu::{
@@ -175,13 +175,31 @@ impl Live2dEngine {
         // Auto-configure breath
         let breath = Some(Breath::with_defaults());
 
+        // Auto-configure lip sync if model has LipSync group
+        let lip_sync_config = runtime.lip_sync_config_from_model();
+        let lip_sync = if !lip_sync_config.parameter_indices.is_empty() || runtime.parameter_ids().iter().any(|id| id == "ParamMouthOpenY") {
+            Some(LipSync::new(lip_sync_config))
+        } else {
+            None
+        };
+
+        // Auto-configure mouse tracker if model has head/eye parameters
+        let has_tracking_params = runtime.parameter_ids().iter().any(|id| {
+            matches!(id.as_str(), "ParamAngleX" | "ParamAngleY" | "ParamEyeBallX" | "ParamEyeBallY")
+        });
+        let mouse_tracker = if has_tracking_params {
+            Some(MouseTracker::with_defaults())
+        } else {
+            None
+        };
+
         let animation = AnimationState {
             motion_player: None,
             expression_manager: ExpressionManager::new(),
             eye_blink,
             breath,
-            lip_sync: None,
-            mouse_tracker: None,
+            lip_sync,
+            mouse_tracker,
         };
 
         let mesh = MeshState {
@@ -433,6 +451,62 @@ impl Live2dEngine {
                 model.animation.breath = None;
             }
         }
+    }
+
+    /// Configures lip sync for a model.
+    /// Pass `Some(config)` to enable, `None` to disable.
+    pub fn configure_lip_sync(&mut self, handle: &ModelHandle, config: Option<LipSyncConfig>) {
+        if let Some(model) = self.models.get_mut(handle.index).filter(|m| m.id == handle.id) {
+            if let Some(config) = config {
+                model.animation.lip_sync = Some(LipSync::new(config));
+            } else {
+                model.animation.lip_sync = None;
+            }
+        }
+    }
+
+    /// Sets the lip sync amplitude for a model.
+    /// Values should be in `0.0..=1.0` from external audio analysis.
+    pub fn set_lip_sync_amplitude(&mut self, handle: &ModelHandle, amplitude: f32) {
+        if let Some(model) = self.models.get_mut(handle.index).filter(|m| m.id == handle.id)
+            && let Some(lip_sync) = model.animation.lip_sync.as_mut()
+        {
+            lip_sync.set_amplitude(amplitude);
+        }
+    }
+
+    /// Configures mouse tracking for a model.
+    /// Pass `Some(config)` to enable, `None` to disable.
+    pub fn configure_mouse_tracker(&mut self, handle: &ModelHandle, config: Option<MouseTrackerConfig>) {
+        if let Some(model) = self.models.get_mut(handle.index).filter(|m| m.id == handle.id) {
+            if let Some(config) = config {
+                model.animation.mouse_tracker = Some(MouseTracker::new(config));
+            } else {
+                model.animation.mouse_tracker = None;
+            }
+        }
+    }
+
+    /// Sets the mouse tracker target position for a model.
+    /// Coordinates are in normalized space: `-1.0..=1.0` where `(0, 0)` is center.
+    pub fn set_mouse_tracker_target(&mut self, handle: &ModelHandle, x: f32, y: f32) {
+        if let Some(model) = self.models.get_mut(handle.index).filter(|m| m.id == handle.id)
+            && let Some(mouse_tracker) = model.animation.mouse_tracker.as_mut()
+        {
+            mouse_tracker.set_target(x, y);
+        }
+    }
+
+    /// Drains motion events from a model's active motion player.
+    ///
+    /// Returns event values that fired since the last call. Call after `tick()`.
+    pub fn drain_motion_events(&mut self, handle: &ModelHandle) -> Vec<String> {
+        if let Some(model) = self.models.get_mut(handle.index).filter(|m| m.id == handle.id)
+            && let Some(player) = model.animation.motion_player.as_mut()
+        {
+            return player.drain_events().into_iter().map(String::from).collect();
+        }
+        Vec::new()
     }
 
     /// Registers a plugin.

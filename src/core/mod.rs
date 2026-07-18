@@ -38,8 +38,7 @@ pub use keyforms::{
     expand_keyform_runtime_slots,
 };
 pub use math::{
-    Matrix44, ModelMatrix, Vector2, degrees_to_radian, direction_to_radian, radian_to_degrees,
-    radian_to_direction,
+    Mat4, Mat4Ext, Vec2, direction_to_radian, radian_to_direction,
 };
 pub use parameters::{clamp_parameter_value, core_repeat_fold, parameter_dirty};
 pub use physics::{

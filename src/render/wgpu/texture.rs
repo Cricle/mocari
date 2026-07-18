@@ -1,6 +1,6 @@
 use wgpu::util::DeviceExt;
 
-use crate::core::Matrix44;
+use crate::core::Mat4;
 
 use crate::render::common::{ClippingLayout as WgpuClippingLayout, MaskChannel as WgpuMaskChannel};
 
@@ -64,7 +64,7 @@ impl WgpuTransform {
         &self.bind_group
     }
 
-    pub fn update_matrix(&mut self, queue: &wgpu::Queue, matrix: &Matrix44) -> bool {
+    pub fn update_matrix(&mut self, queue: &wgpu::Queue, matrix: &Mat4) -> bool {
         let next = encode_wgpu_matrix_bytes(matrix);
         update_uniform_bytes(queue, &self.buffer, &mut self.bytes, &next)
     }
@@ -111,7 +111,7 @@ impl WgpuClipParams {
     pub fn update_params(
         &mut self,
         queue: &wgpu::Queue,
-        matrix: &Matrix44,
+        matrix: &Mat4,
         channel: WgpuMaskChannel,
         inverted: bool,
     ) -> bool {
@@ -136,7 +136,7 @@ fn update_uniform_bytes(
     true
 }
 
-pub fn encode_wgpu_matrix(matrix: &Matrix44) -> Vec<u8> {
+pub fn encode_wgpu_matrix(matrix: &Mat4) -> Vec<u8> {
     encode_wgpu_matrix_bytes(matrix).to_vec()
 }
 
@@ -145,16 +145,16 @@ pub fn encode_wgpu_mask_params(layout: WgpuClippingLayout) -> Vec<u8> {
 }
 
 pub fn encode_wgpu_clip_params(
-    matrix: &Matrix44,
+    matrix: &Mat4,
     channel: WgpuMaskChannel,
     inverted: bool,
 ) -> Vec<u8> {
     encode_wgpu_clip_param_bytes(matrix, channel, inverted).to_vec()
 }
 
-fn encode_wgpu_matrix_bytes(matrix: &Matrix44) -> [u8; 64] {
+fn encode_wgpu_matrix_bytes(matrix: &Mat4) -> [u8; 64] {
     let mut bytes = [0; 64];
-    for (index, &value) in matrix.as_slice().iter().enumerate() {
+    for (index, &value) in matrix.to_cols_array().iter().enumerate() {
         write_f32(&mut bytes, index * 4, value);
     }
     bytes
@@ -183,7 +183,7 @@ fn encode_wgpu_mask_param_bytes(layout: WgpuClippingLayout) -> [u8; 32] {
 }
 
 fn encode_wgpu_clip_param_bytes(
-    matrix: &Matrix44,
+    matrix: &Mat4,
     channel: WgpuMaskChannel,
     inverted: bool,
 ) -> [u8; 96] {
@@ -231,7 +231,7 @@ pub(super) fn create_wgpu_mask_params(
 pub(super) fn create_wgpu_clip_params(
     device: &wgpu::Device,
     bind_group_layout: &wgpu::BindGroupLayout,
-    matrix: &Matrix44,
+    matrix: &Mat4,
     channel: WgpuMaskChannel,
     inverted: bool,
 ) -> WgpuClipParams {
@@ -260,7 +260,7 @@ pub(super) fn create_wgpu_clip_params(
 pub(super) fn create_wgpu_transform(
     device: &wgpu::Device,
     bind_group_layout: &wgpu::BindGroupLayout,
-    matrix: &Matrix44,
+    matrix: &Mat4,
 ) -> WgpuTransform {
     let matrix_bytes = encode_wgpu_matrix(matrix);
     let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
