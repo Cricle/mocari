@@ -1,2 +1,6 @@
 /target
 .idea/
+node_modules/
+*.wasm
+dist/
+package-lock.json
