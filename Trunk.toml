@@ -1,0 +1,8 @@
+[build]
+target = "examples/web_demo/index.html"
+dist = "examples/web_demo/dist"
+
+[serve]
+addresses = ["0.0.0.0"]
+port = 7799
+gzip = true

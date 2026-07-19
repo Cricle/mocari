@@ -4,3 +4,7 @@ node_modules/
 *.wasm
 dist/
 package-lock.json
+package.json
+/models
+examples/web_demo/models
+examples/web_demo/Cargo.lock
