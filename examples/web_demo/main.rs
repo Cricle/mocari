@@ -6,6 +6,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use js_sys::{Array, Promise, Uint8Array};
@@ -25,6 +26,7 @@ struct State {
     handle: RefCell<ModelHandle>,
     mouse: RefCell<[f32; 2]>,
     stats: RefCell<ModelStats>,
+    cache: RefCell<HashMap<String, ModelData>>,
 }
 
 #[derive(Default, Clone)]
@@ -110,12 +112,31 @@ async fn run(canvas: web_sys::HtmlCanvasElement) {
     let data = fetch_model(MODELS[0]).await;
     let handle = apply_model(&mut engine, &data);
     let stats = model_stats(&engine, &handle);
+
+    let mut cache = HashMap::new();
+    cache.insert(MODELS[0].to_string(), data);
+
     let state = Rc::new(State {
         engine: RefCell::new(engine),
         handle: RefCell::new(handle),
         mouse: RefCell::new([0.0; 2]),
         stats: RefCell::new(stats),
+        cache: RefCell::new(cache),
     });
+
+    // Preload all models in background
+    {
+        let st = state.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            let total = MODELS.len() - 1;
+            for (idx, &model_name) in MODELS.iter().skip(1).enumerate() {
+                let data = fetch_model(model_name).await;
+                st.cache.borrow_mut().insert(model_name.to_string(), data);
+                web_sys::console::log_1(&format!("[mocari] Preloaded {}/{}: {}", idx + 1, total, model_name).into());
+            }
+            web_sys::console::log_1(&"[mocari] ✓ All models preloaded and cached".into());
+        });
+    }
 
     // Mouse tracking
     {
@@ -171,7 +192,16 @@ async fn run(canvas: web_sys::HtmlCanvasElement) {
                     let old = st.handle.borrow().clone();
                     let _ = e.unload_model(&old);
                 }
-                let data = fetch_model(MODELS[idx]).await;
+
+                // Check cache first
+                let data = if let Some(cached) = st.cache.borrow().get(MODELS[idx]) {
+                    cached.clone()
+                } else {
+                    let fetched = fetch_model(MODELS[idx]).await;
+                    st.cache.borrow_mut().insert(MODELS[idx].to_string(), fetched.clone());
+                    fetched
+                };
+
                 let mut e = st.engine.borrow_mut();
                 let new_h = apply_model(&mut e, &data);
                 *st.stats.borrow_mut() = model_stats(&e, &new_h);
@@ -348,8 +378,21 @@ struct ModelData {
     textures: Vec<Vec<u8>>,
 }
 
+impl Clone for ModelData {
+    fn clone(&self) -> Self {
+        Self {
+            json: self.json.clone(),
+            motion: self.motion.clone(),
+            moc3: self.moc3.clone(),
+            textures: self.textures.clone(),
+        }
+    }
+}
+
 async fn fetch_model(name: &str) -> ModelData {
     let base = format!("/models/{name}");
+
+    // Fetch model3.json first (small, needed to know what else to fetch)
     let url = format!("{base}/{name}.model3.json");
     let req = web_sys::Request::new_with_str(&url).unwrap();
     let resp: web_sys::Response = JsFuture::from(
@@ -357,6 +400,7 @@ async fn fetch_model(name: &str) -> ModelData {
     ).await.unwrap().unchecked_into();
     let json = JsFuture::from(resp.text().unwrap()).await.unwrap().as_string().unwrap();
 
+    // Parse to get file references
     let v: serde_json::Value = serde_json::from_str(&json).unwrap();
     let tex_paths: Vec<&str> = v["FileReferences"]["Textures"].as_array().unwrap()
         .iter().map(|t| t.as_str().unwrap()).collect();
@@ -366,23 +410,30 @@ async fn fetch_model(name: &str) -> ModelData {
         .and_then(|a| a.first())
         .and_then(|m| m["File"].as_str());
 
+    // Build all paths (moc3, textures, optional motion)
     let mut paths = vec![format!("{name}.moc3")];
     paths.extend(tex_paths.iter().map(|t| t.to_string()));
+    if let Some(motion) = motion_file {
+        paths.push(motion.to_string());
+    }
+
+    // Fetch everything in parallel
     let path_refs: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
     let data = fetch_batch(&base, &path_refs).await.unwrap();
 
-    let motion = if let Some(file) = motion_file {
-        fetch_batch(&base, &[file]).await.ok()
-            .and_then(|d| String::from_utf8(d[0].clone()).ok())
+    let motion = if motion_file.is_some() {
+        String::from_utf8(data.last().unwrap().clone()).ok()
     } else {
         None
     };
+
+    let texture_end = if motion_file.is_some() { data.len() - 1 } else { data.len() };
 
     ModelData {
         json,
         motion,
         moc3: data[0].clone(),
-        textures: data[1..].to_vec(),
+        textures: data[1..texture_end].to_vec(),
     }
 }
 
