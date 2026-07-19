@@ -420,7 +420,7 @@ impl WindowState {
         config.desired_maximum_frame_latency = 3;
         surface.configure(&device, &config);
 
-        let renderer = WgpuLive2dRenderer::new(&device, config.format);
+        let renderer = WgpuLive2dRenderer::new(&device, config.format, 1);
         let font = load_font()?;
         let model_index = 0;
         let model_scale = MODEL_SCALE_DEFAULT;

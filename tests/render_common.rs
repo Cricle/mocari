@@ -1,3 +1,4 @@
+use mocari::core::Mat4Ext;
 use mocari::moc3::{Moc3DrawableMesh, Moc3DrawableVertex};
 use mocari::render::common::{
     ClippingLayoutError, ClippingPlan, ClippingRect, DrawableInfo, MaskChannel, draw_order_indices,

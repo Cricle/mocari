@@ -9,7 +9,7 @@ use super::EngineError;
 /// Owns wgpu device, queue, surface, and surface configuration.
 pub(super) struct WgpuContext {
     #[allow(dead_code)]
-    window: Arc<Window>,
+    window: Option<Arc<Window>>,
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -34,11 +34,17 @@ impl WgpuContext {
             .await
             .map_err(|_| EngineError::NoAdapter)?;
 
+        // WebGL2 doesn't support compute shaders, so use downlevel limits on wasm.
+        #[cfg(target_arch = "wasm32")]
+        let limits = wgpu::Limits::downlevel_webgl2_defaults();
+        #[cfg(not(target_arch = "wasm32"))]
+        let limits = wgpu::Limits::default();
+
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("live2d.engine.device"),
                 required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default(),
+                required_limits: limits,
                 ..Default::default()
             })
             .await
@@ -63,12 +69,28 @@ impl WgpuContext {
         surface.configure(&device, &config);
 
         Ok(Self {
-            window,
+            window: Some(window),
             surface,
             device,
             queue,
             config,
         })
+    }
+
+    /// Creates a WgpuContext from pre-existing wgpu objects (no winit window needed).
+    pub(super) fn from_wgpu(
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+        surface: wgpu::Surface<'static>,
+        config: wgpu::SurfaceConfiguration,
+    ) -> Self {
+        Self {
+            window: None,
+            surface,
+            device,
+            queue,
+            config,
+        }
     }
 
     pub(super) fn device(&self) -> &wgpu::Device {
@@ -87,8 +109,8 @@ impl WgpuContext {
         &self.config
     }
 
-    pub(super) fn window(&self) -> &Arc<Window> {
-        &self.window
+    pub(super) fn window(&self) -> Option<&Arc<Window>> {
+        self.window.as_ref()
     }
 
     pub(super) fn resize(&mut self, size: PhysicalSize<u32>) {

@@ -10,6 +10,7 @@ pub(super) fn render_frame(
     render_callbacks: &mut [super::RenderCallback],
     plugins: &mut [Box<dyn super::Live2dPlugin>],
     clear_color: Option<wgpu::Color>,
+    msaa_view: &wgpu::TextureView,
 ) -> Result<(), EngineError> {
     // Acquire surface texture
     let frame = match ctx.surface().get_current_texture() {
@@ -76,14 +77,14 @@ pub(super) fn render_frame(
         }
     }
 
-    // Main pass — renders all models into the surface view
+    // Main pass — renders all models into the MSAA texture, resolving to surface
     {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("live2d.engine.main_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
+                view: msaa_view,
                 depth_slice: None,
-                resolve_target: None,
+                resolve_target: Some(&view),
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Clear(clear_color.unwrap_or(wgpu::Color {
                         r: 0.08,

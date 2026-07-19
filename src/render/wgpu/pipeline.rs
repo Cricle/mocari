@@ -103,7 +103,7 @@ fn blend_component(factors: (wgpu::BlendFactor, wgpu::BlendFactor)) -> wgpu::Ble
 }
 
 impl WgpuLive2dRenderer {
-    pub fn new(device: &wgpu::Device, color_format: wgpu::TextureFormat) -> Self {
+    pub fn new(device: &wgpu::Device, color_format: wgpu::TextureFormat, sample_count: u32) -> Self {
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("live2d.texture.bind_group_layout"),
@@ -205,6 +205,7 @@ impl WgpuLive2dRenderer {
             &shader,
             color_format,
             Moc3DrawableBlendMode::Normal,
+            sample_count,
             "live2d.pipeline.normal",
         );
         let additive_pipeline = create_live2d_pipeline(
@@ -213,6 +214,7 @@ impl WgpuLive2dRenderer {
             &shader,
             color_format,
             Moc3DrawableBlendMode::Additive,
+            sample_count,
             "live2d.pipeline.additive",
         );
         let multiplicative_pipeline = create_live2d_pipeline(
@@ -221,6 +223,7 @@ impl WgpuLive2dRenderer {
             &shader,
             color_format,
             Moc3DrawableBlendMode::Multiplicative,
+            sample_count,
             "live2d.pipeline.multiplicative",
         );
         let mask_bind_group_layouts = [
@@ -257,6 +260,7 @@ impl WgpuLive2dRenderer {
             &masked_shader,
             color_format,
             Moc3DrawableBlendMode::Normal,
+            sample_count,
             "live2d.masked.pipeline.normal",
         );
         let masked_additive_pipeline = create_live2d_pipeline(
@@ -265,6 +269,7 @@ impl WgpuLive2dRenderer {
             &masked_shader,
             color_format,
             Moc3DrawableBlendMode::Additive,
+            sample_count,
             "live2d.masked.pipeline.additive",
         );
         let masked_multiplicative_pipeline = create_live2d_pipeline(
@@ -273,6 +278,7 @@ impl WgpuLive2dRenderer {
             &masked_shader,
             color_format,
             Moc3DrawableBlendMode::Multiplicative,
+            sample_count,
             "live2d.masked.pipeline.multiplicative",
         );
         let identity_transform =
@@ -595,6 +601,30 @@ impl WgpuLive2dRenderer {
             height: size,
         })
     }
+
+    pub fn create_msaa_render_target(
+        &self,
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        width: u32,
+        height: u32,
+    ) -> wgpu::TextureView {
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("live2d.msaa.texture"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 4,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        texture.create_view(&wgpu::TextureViewDescriptor::default())
+    }
 }
 
 fn create_live2d_pipeline(
@@ -603,6 +633,7 @@ fn create_live2d_pipeline(
     shader: &wgpu::ShaderModule,
     color_format: wgpu::TextureFormat,
     blend_mode: Moc3DrawableBlendMode,
+    sample_count: u32,
     label: &'static str,
 ) -> wgpu::RenderPipeline {
     create_textured_triangle_pipeline(
@@ -611,6 +642,7 @@ fn create_live2d_pipeline(
         shader,
         color_format,
         live2d_blend_state(blend_mode),
+        sample_count,
         label,
     )
 }
@@ -627,6 +659,7 @@ fn create_live2d_mask_pipeline(
         shader,
         wgpu::TextureFormat::Rgba8Unorm,
         wgpu_mask_blend_state(),
+        1,
         label,
     )
 }
@@ -637,6 +670,7 @@ fn create_textured_triangle_pipeline(
     shader: &wgpu::ShaderModule,
     color_format: wgpu::TextureFormat,
     blend_state: wgpu::BlendState,
+    sample_count: u32,
     label: &'static str,
 ) -> wgpu::RenderPipeline {
     let vertex_buffers = [Some(drawable_vertex_layout())];
@@ -660,7 +694,10 @@ fn create_textured_triangle_pipeline(
             ..Default::default()
         },
         depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
+        multisample: wgpu::MultisampleState {
+            count: sample_count,
+            ..Default::default()
+        },
         fragment: Some(wgpu::FragmentState {
             module: shader,
             entry_point: Some("fs_main"),

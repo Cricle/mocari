@@ -135,7 +135,7 @@ fn encodes_mask_params_from_layout_channel_and_bounds() {
 #[test]
 fn creates_mask_params_bind_group() {
     let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, 1);
     let layout = mocari::render::wgpu::WgpuClippingLayout::new(
         WgpuMaskChannel::Red,
         WgpuClippingRect::new(0.0, 0.0, 1.0, 1.0),
@@ -151,7 +151,7 @@ fn creates_mask_params_bind_group() {
 #[test]
 fn mask_params_update_skips_unchanged_layout() {
     let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, 1);
     let layout = mocari::render::wgpu::WgpuClippingLayout::new(
         WgpuMaskChannel::Red,
         WgpuClippingRect::new(0.0, 0.0, 1.0, 1.0),
@@ -190,7 +190,7 @@ fn encodes_clip_params_from_draw_matrix_and_channel() {
 #[test]
 fn creates_clip_params_bind_group() {
     let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, 1);
 
     let params =
         renderer.create_clip_params(&device, &Matrix44::identity(), WgpuMaskChannel::Red, false);
@@ -203,7 +203,7 @@ fn creates_clip_params_bind_group() {
 #[test]
 fn clip_params_update_skips_unchanged_params() {
     let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, 1);
     let matrix = Matrix44::identity();
     let mut changed = Matrix44::identity();
     changed.scale(2.0, 1.0);
@@ -265,7 +265,7 @@ fn prefers_unorm_surface_format_for_live2d_gamma_blending() {
 #[test]
 fn creates_pipeline_and_encodes_draw_calls() {
     let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, 1);
 
     let mesh = Moc3DrawableMesh::from_parts(
         0,
@@ -346,7 +346,7 @@ fn creates_pipeline_and_encodes_draw_calls() {
 #[test]
 fn creates_mask_pipeline_and_encodes_mask_draw_call() {
     let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, 1);
     let texture = renderer
         .create_rgba8_texture(&device, &queue, 1, 1, &[255, 255, 255, 255])
         .unwrap();
@@ -399,7 +399,7 @@ fn creates_mask_pipeline_and_encodes_mask_draw_call() {
 #[test]
 fn creates_masked_pipeline_and_encodes_masked_draw_call() {
     let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, 1);
     let texture = renderer
         .create_rgba8_texture(&device, &queue, 1, 1, &[255, 255, 255, 255])
         .unwrap();
@@ -463,7 +463,7 @@ fn creates_masked_pipeline_and_encodes_masked_draw_call() {
 #[test]
 fn draws_prepared_mask_contexts_into_mask_target() {
     let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, 1);
     let texture = renderer
         .create_rgba8_texture(&device, &queue, 1, 1, &[255, 255, 255, 255])
         .unwrap();
@@ -510,7 +510,7 @@ fn draws_prepared_mask_contexts_into_mask_target() {
 #[test]
 fn draws_masked_and_unmasked_drawables_with_prepared_clipping() {
     let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, 1);
     let texture = renderer
         .create_rgba8_texture(&device, &queue, 1, 1, &[255, 255, 255, 255])
         .unwrap();
@@ -832,7 +832,7 @@ fn mesh_buffers_update_drawables_rejects_topology_changes() {
 #[test]
 fn draw_returns_error_for_missing_texture_bind_group() {
     let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, 1);
     let mesh = test_mesh_with_draw_order(2, 0.0);
     let buffers = WgpuMeshBuffers::from_drawables(&device, &[mesh]).unwrap();
     let target = device.create_texture(&wgpu::TextureDescriptor {
@@ -881,7 +881,7 @@ fn draw_returns_error_for_missing_texture_bind_group() {
 #[test]
 fn draw_returns_error_for_masked_drawable_until_clipping_is_available() {
     let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, 1);
     let texture = renderer
         .create_rgba8_texture(&device, &queue, 1, 1, &[255, 255, 255, 255])
         .unwrap();
@@ -1100,7 +1100,7 @@ fn prepares_clipping_bounds_and_matrices_from_clipped_drawables() {
 #[test]
 fn creates_rgba8_texture_with_bind_group() {
     let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, 1);
 
     let texture = renderer
         .create_rgba8_texture(
@@ -1125,7 +1125,7 @@ fn creates_rgba8_texture_with_bind_group() {
 #[test]
 fn creates_mask_render_target_that_can_be_cleared() {
     let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, 1);
 
     let mask = renderer.create_mask_render_target(&device, 256).unwrap();
 
@@ -1162,7 +1162,7 @@ fn creates_mask_render_target_that_can_be_cleared() {
 #[test]
 fn rejects_zero_sized_mask_render_target() {
     let (device, _queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, 1);
 
     let error = renderer.create_mask_render_target(&device, 0).unwrap_err();
 
@@ -1178,7 +1178,7 @@ fn rejects_zero_sized_mask_render_target() {
 #[test]
 fn draws_with_uploaded_textures() {
     let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, 1);
     let texture = renderer
         .create_rgba8_texture(&device, &queue, 1, 1, &[255, 255, 255, 255])
         .unwrap();
@@ -1234,7 +1234,7 @@ fn draws_with_uploaded_textures() {
 #[test]
 fn draws_with_uploaded_textures_and_transform() {
     let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, 1);
     let texture = renderer
         .create_rgba8_texture(&device, &queue, 1, 1, &[255, 255, 255, 255])
         .unwrap();
@@ -1293,7 +1293,7 @@ fn draws_with_uploaded_textures_and_transform() {
 #[test]
 fn draw_with_textures_skips_transparent_drawables() {
     let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, 1);
     let texture = renderer
         .create_rgba8_texture(&device, &queue, 1, 1, &[255, 255, 255, 255])
         .unwrap();
@@ -1352,7 +1352,7 @@ fn draw_with_textures_skips_transparent_drawables() {
 #[test]
 fn draw_with_clipping_skips_empty_drawables() {
     let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, 1);
     let texture = renderer
         .create_rgba8_texture(&device, &queue, 1, 1, &[255, 255, 255, 255])
         .unwrap();
@@ -1424,7 +1424,7 @@ fn draw_with_clipping_skips_empty_drawables() {
 #[test]
 fn draw_with_clipping_skips_transparent_drawables() {
     let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, 1);
     let texture = renderer
         .create_rgba8_texture(&device, &queue, 1, 1, &[255, 255, 255, 255])
         .unwrap();
@@ -1499,7 +1499,7 @@ fn draw_with_clipping_skips_transparent_drawables() {
 #[test]
 fn draw_masks_keeps_transparent_mask_drawables() {
     let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, 1);
     let texture = renderer
         .create_rgba8_texture(&device, &queue, 1, 1, &[255, 255, 255, 255])
         .unwrap();
@@ -1551,7 +1551,7 @@ fn draw_masks_keeps_transparent_mask_drawables() {
 #[test]
 fn draws_additive_and_multiplicative_drawables() {
     let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, 1);
     let texture = renderer
         .create_rgba8_texture(&device, &queue, 1, 1, &[255, 255, 255, 255])
         .unwrap();
@@ -1618,7 +1618,7 @@ fn draws_additive_and_multiplicative_drawables() {
 #[test]
 fn rejects_rgba8_texture_with_wrong_byte_len() {
     let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
-    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb);
+    let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, 1);
 
     let error = renderer
         .create_rgba8_texture(&device, &queue, 2, 2, &[0; 15])
