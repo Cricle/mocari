@@ -68,6 +68,9 @@ pub mod runtime;
 /// MCP (Model Context Protocol) server for controlling Live2D models.
 #[cfg(feature = "mcp")]
 pub mod mcp;
+/// AI integration traits for rigging and runtime character control.
+#[cfg(feature = "ai")]
+pub mod ai;
 
 pub use crate::auto::{Breath, BreathConfig, EyeBlink, EyeBlinkConfig, LipSync, LipSyncConfig, MouseTracker, MouseTrackerConfig};
 pub use crate::core::{DrawableId, Id, ParameterId, PartId};

@@ -16,6 +16,7 @@ wgpu = ["dep:wgpu", "dep:pollster", "dep:winit"]
 web = ["wgpu", "dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:web-sys"]
 mcp = ["dep:rmcp", "dep:tokio", "dep:clap"]
 mcp-http = ["mcp", "rmcp/transport-streamable-http-server"]
+ai = []
 
 [dependencies]
 image = { version = "0.25.9", default-features = false, features = ["png"] }
@@ -37,8 +38,11 @@ js-sys = { version = "0.3", optional = true }
 [dependencies.web-sys]
 version = "0.3"
 features = [
-    "Window", "Request", "RequestInit", "RequestMode",
+    "Window", "Document", "Element", "HtmlElement", "NodeList", "HtmlCollection",
+    "Performance",
+    "Request", "RequestInit", "RequestMode",
     "Response", "Headers", "HtmlCanvasElement", "console",
+    "MouseEvent",
 ]
 optional = true
 
