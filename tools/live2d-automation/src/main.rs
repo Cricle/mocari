@@ -1,12 +1,4 @@
-mod export;
-mod face_detect;
-mod layer_gen;
-mod mesh;
-mod motion;
-mod physics;
-mod pipeline;
-mod rigging;
-mod types;
+use live2d_automation::{config, pipeline};
 
 use anyhow::Result;
 use clap::Parser;
@@ -34,6 +26,15 @@ enum Command {
         /// Motion types to generate (comma-separated: idle,tap,move,emotional)
         #[arg(long, default_value = "idle,tap,move,emotional")]
         motion_types: String,
+        /// Path to configuration file (optional)
+        #[arg(long)]
+        config: Option<String>,
+    },
+    /// Generate default configuration file
+    InitConfig {
+        /// Output path for configuration file
+        #[arg(long, default_value = "live2d-config.json")]
+        output: String,
     },
 }
 
@@ -45,12 +46,24 @@ fn main() -> Result<()> {
             output_dir,
             model_name,
             motion_types,
+            config,
         } => {
+            let _config = if let Some(config_path) = config {
+                config::PipelineConfig::from_file(&config_path)?
+            } else {
+                config::PipelineConfig::default()
+            };
+
             let motion_list: Vec<String> = motion_types
                 .split(',')
                 .map(|s| s.trim().to_string())
                 .collect();
             pipeline::run_pipeline(&image_path, &output_dir, &model_name, &motion_list)?;
+        }
+        Command::InitConfig { output } => {
+            let config = config::PipelineConfig::default();
+            config.save(&output)?;
+            println!("Configuration file created: {output}");
         }
     }
     Ok(())

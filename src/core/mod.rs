@@ -7,7 +7,6 @@
 mod art_mesh;
 mod blend;
 mod deformers;
-mod ids;
 mod interpolation;
 mod keyforms;
 mod math;
@@ -27,7 +26,6 @@ pub use deformers::{
     transform_art_mesh_vertices_by_deformers, warp_deformer_transform_inside,
     warp_deformer_transform_target,
 };
-pub use ids::{DrawableId, Id, ParameterId, PartId};
 pub use interpolation::{
     ArrayInterpolationGroup, InterpolationGroup, InterpolationOutput, interpolate_float32,
     interpolate_float32_array, interpolate_float32_array_grouped, interpolate_float32_grouped,

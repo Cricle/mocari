@@ -73,7 +73,6 @@ pub mod mcp;
 pub mod ai;
 
 pub use crate::auto::{Breath, BreathConfig, EyeBlink, EyeBlinkConfig, LipSync, LipSyncConfig, MouseTracker, MouseTrackerConfig};
-pub use crate::core::{DrawableId, Id, ParameterId, PartId};
 pub use crate::error::{Error, Result};
 pub use crate::expression::{ExpressionManager, ExpressionPlayer};
 pub use crate::json::{ExpressionTarget, MotionUserData, UserData3};

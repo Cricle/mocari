@@ -5,13 +5,28 @@ edition = "2024"
 description = "Automated Live2D model generation from character images"
 license = "MIT"
 
+[lib]
+name = "live2d_automation"
+path = "src/lib.rs"
+
+[[bin]]
+name = "live2d-automation"
+path = "src/main.rs"
+required-features = ["cli"]
+
+[features]
+default = ["parallel", "cli"]
+parallel = ["rayon"]
+cli = ["clap"]
+
 [dependencies]
-mocari = { path = "../..", features = ["ai"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
+imageproc = "0.25"
 spade = "2"
 glam = "0.33"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive"], optional = true }
 anyhow = "1"
 rand = "0.8"
+rayon = { version = "1.10", optional = true }

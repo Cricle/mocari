@@ -7,9 +7,6 @@
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 /// Error type used by Mocari parsers and mesh-building helpers.
 pub enum Error {
-    /// An id string was empty where Cubism data requires a named item.
-    #[error("id cannot be empty")]
-    EmptyId,
     /// A Cubism JSON sidecar file was malformed.
     #[error("invalid {format}: {message}")]
     InvalidJson {

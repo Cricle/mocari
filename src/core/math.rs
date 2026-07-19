@@ -7,6 +7,10 @@ pub trait Mat4Ext {
     fn transform_y(&self, value: f32) -> f32;
     fn invert_transform_x(&self, value: f32) -> f32;
     fn invert_transform_y(&self, value: f32) -> f32;
+    fn set_scale(&mut self, sx: f32, sy: f32);
+    fn set_translation(&mut self, tx: f32, ty: f32);
+    fn scale(&mut self, sx: f32, sy: f32);
+    fn translate(&mut self, tx: f32, ty: f32);
 }
 
 impl Mat4Ext for Mat4 {
@@ -32,6 +36,26 @@ impl Mat4Ext for Mat4 {
 
     fn invert_transform_y(&self, value: f32) -> f32 {
         (value - self.w_axis.y) / self.y_axis.y
+    }
+
+    fn set_scale(&mut self, sx: f32, sy: f32) {
+        self.x_axis.x = sx;
+        self.y_axis.y = sy;
+    }
+
+    fn set_translation(&mut self, tx: f32, ty: f32) {
+        self.w_axis.x = tx;
+        self.w_axis.y = ty;
+    }
+
+    fn scale(&mut self, sx: f32, sy: f32) {
+        self.x_axis.x = sx;
+        self.y_axis.y = sy;
+    }
+
+    fn translate(&mut self, tx: f32, ty: f32) {
+        self.w_axis.x = tx;
+        self.w_axis.y = ty;
     }
 }
 

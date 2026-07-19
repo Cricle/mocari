@@ -21,7 +21,7 @@ pub(super) fn tool_error(msg: impl Into<String>) -> ToolResult {
 }
 
 pub(super) fn success(text: impl Into<String>) -> ToolResult {
-    Ok(CallToolResult::success(vec![ContentBlock::text(text)]).into())
+    Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
 }
 
 pub(super) fn get_string(args: &JsonObject, key: &str) -> Result<String, rmcp::ErrorData> {

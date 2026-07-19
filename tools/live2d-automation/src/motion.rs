@@ -1,6 +1,34 @@
 use crate::types::{Motion, MotionCurve, Parameter};
 use std::f32::consts::PI;
 
+/// Easing functions for motion curves.
+#[expect(dead_code)]
+fn ease_in(t: f32) -> f32 {
+    t * t
+}
+
+#[expect(dead_code)]
+fn ease_out(t: f32) -> f32 {
+    1.0 - (1.0 - t) * (1.0 - t)
+}
+
+fn ease_in_out(t: f32) -> f32 {
+    if t < 0.5 {
+        2.0 * t * t
+    } else {
+        1.0 - (-2.0 * t + 2.0).powi(2) / 2.0
+    }
+}
+
+#[expect(dead_code)]
+fn elastic_out(t: f32) -> f32 {
+    if t == 0.0 || t == 1.0 {
+        return t;
+    }
+    let c4 = (2.0 * PI) / 3.0;
+    2.0f32.powf(-10.0 * t) * ((t * 10.0 - 0.75) * c4).sin() + 1.0
+}
+
 struct ParamSpec {
     min: f32,
     max: f32,
@@ -31,37 +59,33 @@ fn clamp_val(specs: &std::collections::HashMap<String, ParamSpec>, id: &str, val
     }
 }
 
-/// Generate motions from parameter definitions and requested types.
-pub fn generate_motions(parameters: &[Parameter], motion_types: &[String]) -> Vec<Motion> {
+/// Generate motions for a single type (for parallel processing).
+pub fn generate_motions_for_type(parameters: &[Parameter], motion_type: &str) -> Vec<Motion> {
     let specs = build_specs(parameters);
     let param_ids: Vec<&str> = parameters.iter().map(|p| p.id.as_str()).collect();
-    let mut motions = Vec::new();
 
-    for t in motion_types {
-        match t.as_str() {
-            "idle" => {
-                motions.push(breathing_motion(&specs, &param_ids));
-                motions.push(blink_motion(&specs, &param_ids));
-                motions.push(sway_motion(&specs, &param_ids));
-            }
-            "tap" => {
-                motions.push(tap_motion(&specs, &param_ids, "head", "Head"));
-                motions.push(tap_motion(&specs, &param_ids, "body", "Body"));
-            }
-            "move" => {
-                motions.push(walk_motion(&specs, &param_ids));
-                motions.push(wave_motion(&specs, &param_ids));
-            }
-            "emotional" => {
-                motions.push(emotion_motion(&specs, &param_ids, "happy", "Happy"));
-                motions.push(emotion_motion(&specs, &param_ids, "surprised", "Surprised"));
-                motions.push(emotion_motion(&specs, &param_ids, "thinking", "Thinking"));
-            }
-            _ => {}
-        }
+    match motion_type {
+        "idle" => vec![
+            breathing_motion(&specs, &param_ids),
+            blink_motion(&specs, &param_ids),
+            sway_motion(&specs, &param_ids),
+        ],
+        "tap" => vec![
+            tap_motion(&specs, &param_ids, "head", "Head"),
+            tap_motion(&specs, &param_ids, "body", "Body"),
+        ],
+        "move" => vec![
+            walk_motion(&specs, &param_ids),
+            wave_motion(&specs, &param_ids),
+            sit_motion(&specs, &param_ids),
+        ],
+        "emotional" => vec![
+            emotion_motion(&specs, &param_ids, "happy", "Happy"),
+            emotion_motion(&specs, &param_ids, "surprised", "Surprised"),
+            emotion_motion(&specs, &param_ids, "thinking", "Thinking"),
+        ],
+        _ => Vec::new(),
     }
-
-    motions
 }
 
 type Frame = (f32, Vec<(String, f32)>);
@@ -267,6 +291,39 @@ fn wave_motion(
     make_motion("Move_Wave", "move", duration, fps, false, frames)
 }
 
+fn sit_motion(
+    specs: &std::collections::HashMap<String, ParamSpec>,
+    param_ids: &[&str],
+) -> Motion {
+    let duration = 2.0;
+    let fps = 30.0;
+    let num_frames = (duration * fps) as usize;
+    let mut frames = Vec::new();
+
+    for i in 0..num_frames {
+        let t = i as f32 / num_frames as f32;
+        let eased = ease_in_out(t);
+        let mut vals = Vec::new();
+
+        // Sit down: body angle Y goes negative, legs bend
+        if param_ids.contains(&"ParamBodyAngleY") {
+            let val = -15.0 * eased;
+            vals.push(("ParamBodyAngleY".into(), clamp_val(specs, "ParamBodyAngleY", val)));
+        }
+        if param_ids.contains(&"ParamLegL") {
+            let val = 45.0 * eased;
+            vals.push(("ParamLegL".into(), clamp_val(specs, "ParamLegL", val)));
+        }
+        if param_ids.contains(&"ParamLegR") {
+            let val = 45.0 * eased;
+            vals.push(("ParamLegR".into(), clamp_val(specs, "ParamLegR", val)));
+        }
+        frames.push((t * duration, vals));
+    }
+
+    make_motion("Move_Sit", "move", duration, fps, false, frames)
+}
+
 fn emotion_keyframes(emotion: &str) -> std::collections::HashMap<String, f32> {
     let mut m = std::collections::HashMap::new();
     match emotion {
@@ -316,9 +373,9 @@ fn emotion_motion(
     for i in 0..num_frames {
         let t = i as f32 / num_frames as f32;
         let blend = if t < 0.3 {
-            t / 0.3
+            ease_in_out(t / 0.3)
         } else if t > 0.7 {
-            (1.0 - t) / 0.3
+            ease_in_out((1.0 - t) / 0.3)
         } else {
             1.0
         };

@@ -242,7 +242,7 @@ impl WgpuMeshBuffers {
         for (drawable, mesh) in self.drawables.iter_mut().zip(meshes) {
             if mesh.is_dirty() {
                 encode_vertices_from_drawable(mesh, &mut vertex_bytes);
-                if !vertex_bytes.is_empty() {
+                if !vertex_bytes.is_empty() && vertex_bytes != drawable.vertex_bytes {
                     queue.write_buffer(&drawable.vertex_buffer, 0, &vertex_bytes);
                     drawable.vertex_bytes.clear();
                     drawable.vertex_bytes.extend_from_slice(&vertex_bytes);

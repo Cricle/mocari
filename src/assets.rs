@@ -227,6 +227,34 @@ struct ParsedModel {
     textures: Vec<DecodedTexture>,
 }
 
+struct Moc3Sections {
+    canvas: Moc3CanvasInfo,
+    art_meshes: Moc3ArtMeshes,
+    art_mesh_keyforms: Moc3ArtMeshKeyforms,
+    deformers: Moc3Deformers,
+    bindings: Moc3KeyformBindings,
+    ids: Moc3Ids,
+    offscreen: Moc3OffscreenInfo,
+    glues: Moc3Glues,
+    parts: Moc3Parts,
+    draw_order_groups: Option<Moc3DrawOrderGroups>,
+}
+
+fn parse_moc3_sections(moc: &[u8]) -> Result<Moc3Sections, AssetLoadError> {
+    Ok(Moc3Sections {
+        art_meshes: Moc3ArtMeshes::parse(moc).map_err(AssetLoadError::Moc3)?,
+        art_mesh_keyforms: Moc3ArtMeshKeyforms::parse(moc).map_err(AssetLoadError::Moc3)?,
+        deformers: Moc3Deformers::parse(moc).map_err(AssetLoadError::Moc3)?,
+        bindings: Moc3KeyformBindings::parse(moc).map_err(AssetLoadError::Moc3)?,
+        ids: Moc3Ids::parse(moc).map_err(AssetLoadError::Moc3)?,
+        offscreen: Moc3OffscreenInfo::parse(moc).map_err(AssetLoadError::Moc3)?,
+        glues: Moc3Glues::parse(moc).map_err(AssetLoadError::Moc3)?,
+        parts: Moc3Parts::parse(moc).map_err(AssetLoadError::Moc3)?,
+        canvas: Moc3CanvasInfo::parse(moc).map_err(AssetLoadError::Moc3)?,
+        draw_order_groups: Moc3DrawOrderGroups::parse(moc).map_err(AssetLoadError::Moc3)?,
+    })
+}
+
 impl ParsedModel {
     fn into_default_model(self) -> Result<DefaultModel, AssetLoadError> {
         let mut meshes = build_moc3_drawable_meshes_for_default_pose_with_offscreen_state(
@@ -298,16 +326,8 @@ fn parse_model(path: impl AsRef<Path>) -> Result<ParsedModel, AssetLoadError> {
     let moc_path = model_dir.join(model.moc());
     let moc = read_bytes(&moc_path)?;
 
-    let art_meshes = Moc3ArtMeshes::parse(&moc).map_err(AssetLoadError::Moc3)?;
-    let art_mesh_keyforms = Moc3ArtMeshKeyforms::parse(&moc).map_err(AssetLoadError::Moc3)?;
-    let deformers = Moc3Deformers::parse(&moc).map_err(AssetLoadError::Moc3)?;
-    let bindings = Moc3KeyformBindings::parse(&moc).map_err(AssetLoadError::Moc3)?;
-    let ids = Moc3Ids::parse(&moc).map_err(AssetLoadError::Moc3)?;
-    let offscreen = Moc3OffscreenInfo::parse(&moc).map_err(AssetLoadError::Moc3)?;
-    let glues = Moc3Glues::parse(&moc).map_err(AssetLoadError::Moc3)?;
-    let parts = Moc3Parts::parse(&moc).map_err(AssetLoadError::Moc3)?;
-    let canvas = Moc3CanvasInfo::parse(&moc).map_err(AssetLoadError::Moc3)?;
-    let draw_order_groups = Moc3DrawOrderGroups::parse(&moc).map_err(AssetLoadError::Moc3)?;
+    let sections = parse_moc3_sections(&moc)?;
+
     let physics = match model.physics() {
         Some(physics_file) => {
             let physics_source = read_text(&model_dir.join(physics_file))?;
@@ -333,16 +353,16 @@ fn parse_model(path: impl AsRef<Path>) -> Result<ParsedModel, AssetLoadError> {
 
     Ok(ParsedModel {
         model,
-        canvas,
-        art_meshes,
-        art_mesh_keyforms,
-        deformers,
-        bindings,
-        ids,
-        offscreen,
-        glues,
-        parts,
-        draw_order_groups,
+        canvas: sections.canvas,
+        art_meshes: sections.art_meshes,
+        art_mesh_keyforms: sections.art_mesh_keyforms,
+        deformers: sections.deformers,
+        bindings: sections.bindings,
+        ids: sections.ids,
+        offscreen: sections.offscreen,
+        glues: sections.glues,
+        parts: sections.parts,
+        draw_order_groups: sections.draw_order_groups,
         physics,
         pose,
         user_data,
@@ -422,21 +442,7 @@ fn parse_model_from_bytes(
     texture_pngs: &[&[u8]],
 ) -> Result<ParsedModel, AssetLoadError> {
     let model = Model3::from_json_str(model_json).map_err(AssetLoadError::Json)?;
-
-    let art_meshes = Moc3ArtMeshes::parse(moc3_bytes).map_err(AssetLoadError::Moc3)?;
-    let art_mesh_keyforms = Moc3ArtMeshKeyforms::parse(moc3_bytes).map_err(AssetLoadError::Moc3)?;
-    let deformers = Moc3Deformers::parse(moc3_bytes).map_err(AssetLoadError::Moc3)?;
-    let bindings = Moc3KeyformBindings::parse(moc3_bytes).map_err(AssetLoadError::Moc3)?;
-    let ids = Moc3Ids::parse(moc3_bytes).map_err(AssetLoadError::Moc3)?;
-    let offscreen = Moc3OffscreenInfo::parse(moc3_bytes).map_err(AssetLoadError::Moc3)?;
-    let glues = Moc3Glues::parse(moc3_bytes).map_err(AssetLoadError::Moc3)?;
-    let parts = Moc3Parts::parse(moc3_bytes).map_err(AssetLoadError::Moc3)?;
-    let canvas = Moc3CanvasInfo::parse(moc3_bytes).map_err(AssetLoadError::Moc3)?;
-    let draw_order_groups = Moc3DrawOrderGroups::parse(moc3_bytes).map_err(AssetLoadError::Moc3)?;
-
-    // Physics, pose, and user_data are JSON files referenced by the model.
-    // In the bytes-based API, these are not provided (optional features).
-    // Users can set them later via runtime methods if needed.
+    let sections = parse_moc3_sections(moc3_bytes)?;
 
     let textures = texture_pngs
         .iter()
@@ -446,16 +452,16 @@ fn parse_model_from_bytes(
 
     Ok(ParsedModel {
         model,
-        canvas,
-        art_meshes,
-        art_mesh_keyforms,
-        deformers,
-        bindings,
-        ids,
-        offscreen,
-        glues,
-        parts,
-        draw_order_groups,
+        canvas: sections.canvas,
+        art_meshes: sections.art_meshes,
+        art_mesh_keyforms: sections.art_mesh_keyforms,
+        deformers: sections.deformers,
+        bindings: sections.bindings,
+        ids: sections.ids,
+        offscreen: sections.offscreen,
+        glues: sections.glues,
+        parts: sections.parts,
+        draw_order_groups: sections.draw_order_groups,
         physics: None,
         pose: None,
         user_data: None,

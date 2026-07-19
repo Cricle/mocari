@@ -12,6 +12,7 @@ pub use desktop_pet::DesktopPetConfig;
 pub use model::{ModelBounds, fit_model_matrix};
 pub use plugin::{FrameContext, Live2dPlugin, RenderContext};
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -23,8 +24,9 @@ use crate::assets::load_model_runtime;
 use crate::auto::{Breath, BreathConfig, EyeBlink, EyeBlinkConfig, LipSync, LipSyncConfig, MouseTracker, MouseTrackerConfig};
 use crate::expression::ExpressionManager;
 use crate::motion::{MotionPlayer, load_motion};
+use crate::runtime::ModelRuntime;
 use crate::render::wgpu::{
-    WgpuClippingPlan, WgpuLive2dRenderer, WgpuMeshBuffers,
+    WgpuClippingPlan, WgpuLive2dRenderer, WgpuMeshBuffers, WgpuTexture,
 };
 
 use context::WgpuContext;
@@ -232,108 +234,11 @@ impl Live2dEngine {
         let bounds = ModelBounds::from_drawables(runtime.meshes())
             .ok_or_else(|| EngineError::ModelLoad("model has no drawable bounds".into()))?;
 
-        let textures = loaded
-            .textures()
-            .iter()
-            .map(|tex| {
-                self.renderer
-                    .create_rgba8_texture(self.ctx.device(), self.ctx.queue(), tex.width(), tex.height(), tex.rgba())
-            })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| EngineError::ModelLoad(e.to_string()))?;
-
+        let textures = self.create_textures(loaded.textures())?;
         let motion_groups = model::motion_paths_by_group(&runtime, model_dir);
         let expressions = model::expression_paths(&runtime, model_dir);
 
-        let mesh_buffers = WgpuMeshBuffers::from_drawables(self.ctx.device(), runtime.meshes())
-            .ok_or_else(|| EngineError::ModelLoad("failed to create mesh buffers".into()))?;
-
-        let mut clipping_plan = WgpuClippingPlan::from_mesh_buffers(&mesh_buffers);
-        clipping_plan.prepare_single_texture_masks(&mesh_buffers)?;
-        let clipping_resources = self.renderer.create_clipping_resources(self.ctx.device(), &clipping_plan)?;
-
-        let mask_target = self.renderer.create_mask_render_target(self.ctx.device(), MASK_TEXTURE_SIZE)
-            .map_err(|e| EngineError::ModelLoad(e.to_string()))?;
-
-        let config = self.ctx.config();
-        let transform = self.renderer.create_transform(
-            self.ctx.device(),
-            &fit_model_matrix(bounds, config.width, config.height, 1.0),
-        );
-
-        // Auto-configure eye blink if model has eye parameters
-        let has_eye_params = runtime.parameter_ids().iter().any(|id| {
-            matches!(id.as_str(), "ParamEyeLOpen" | "ParamEyeROpen" | "ParamEyeOpen")
-        });
-        let eye_blink = if has_eye_params {
-            Some(EyeBlink::with_defaults())
-        } else {
-            None
-        };
-
-        // Auto-configure breath
-        let breath = Some(Breath::with_defaults());
-
-        // Auto-configure lip sync if model has LipSync group
-        let lip_sync_config = runtime.lip_sync_config_from_model();
-        let lip_sync = if !lip_sync_config.parameter_indices.is_empty() || runtime.parameter_ids().iter().any(|id| id == "ParamMouthOpenY") {
-            Some(LipSync::new(lip_sync_config))
-        } else {
-            None
-        };
-
-        // Auto-configure mouse tracker if model has head/eye parameters
-        let has_tracking_params = runtime.parameter_ids().iter().any(|id| {
-            matches!(id.as_str(), "ParamAngleX" | "ParamAngleY" | "ParamEyeBallX" | "ParamEyeBallY")
-        });
-        let mouse_tracker = if has_tracking_params {
-            Some(MouseTracker::with_defaults())
-        } else {
-            None
-        };
-
-        let animation = AnimationState {
-            motion_player: None,
-            expression_manager: ExpressionManager::new(),
-            eye_blink,
-            breath,
-            lip_sync,
-            mouse_tracker,
-        };
-
-        let mesh = MeshState {
-            mesh_buffers,
-            textures,
-            clipping_resources,
-            mask_target,
-        };
-
-        let id = format!("model_{}", self.models.len());
-        let handle = ModelHandle {
-            index: self.models.len(),
-            id: id.clone(),
-        };
-
-        self.models.push(LoadedModel {
-            id,
-            path: PathBuf::from(path),
-            runtime,
-            motions: motion_groups,
-            expressions,
-            animation,
-            mesh,
-            transform,
-            bounds,
-            scale: 1.0,
-            dirty: true,
-        });
-
-        for plugin in &mut self.plugins {
-            plugin.on_model_loaded(&handle);
-        }
-
-        self.needs_redraw = true;
-        Ok(handle)
+        self.register_model(runtime, textures, bounds, PathBuf::from(path), motion_groups, expressions)
     }
 
     /// Unloads a model by handle. Returns true if found and removed.
@@ -555,96 +460,9 @@ impl Live2dEngine {
         let bounds = ModelBounds::from_drawables(runtime.meshes())
             .ok_or_else(|| EngineError::ModelLoad("model has no drawable bounds".into()))?;
 
-        let textures = loaded
-            .textures()
-            .iter()
-            .map(|tex| {
-                self.renderer
-                    .create_rgba8_texture(self.ctx.device(), self.ctx.queue(), tex.width(), tex.height(), tex.rgba())
-            })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| EngineError::ModelLoad(e.to_string()))?;
+        let textures = self.create_textures(loaded.textures())?;
 
-        let mesh_buffers = WgpuMeshBuffers::from_drawables(self.ctx.device(), runtime.meshes())
-            .ok_or_else(|| EngineError::ModelLoad("failed to create mesh buffers".into()))?;
-
-        let mut clipping_plan = WgpuClippingPlan::from_mesh_buffers(&mesh_buffers);
-        clipping_plan.prepare_single_texture_masks(&mesh_buffers)?;
-        let clipping_resources = self.renderer.create_clipping_resources(self.ctx.device(), &clipping_plan)?;
-
-        let mask_target = self.renderer.create_mask_render_target(self.ctx.device(), MASK_TEXTURE_SIZE)
-            .map_err(|e| EngineError::ModelLoad(e.to_string()))?;
-
-        let config = self.ctx.config();
-        let transform = self.renderer.create_transform(
-            self.ctx.device(),
-            &fit_model_matrix(bounds, config.width, config.height, 1.0),
-        );
-
-        let has_eye_params = runtime.parameter_ids().iter().any(|id| {
-            matches!(id.as_str(), "ParamEyeLOpen" | "ParamEyeROpen" | "ParamEyeOpen")
-        });
-        let eye_blink = if has_eye_params {
-            Some(EyeBlink::with_defaults())
-        } else {
-            None
-        };
-        let breath = Some(Breath::with_defaults());
-
-        let lip_sync_config = runtime.lip_sync_config_from_model();
-        let lip_sync = if !lip_sync_config.parameter_indices.is_empty() || runtime.parameter_ids().iter().any(|id| id == "ParamMouthOpenY") {
-            Some(LipSync::new(lip_sync_config))
-        } else {
-            None
-        };
-
-        let has_tracking_params = runtime.parameter_ids().iter().any(|id| {
-            matches!(id.as_str(), "ParamAngleX" | "ParamAngleY" | "ParamEyeBallX" | "ParamEyeBallY")
-        });
-        let mouse_tracker = if has_tracking_params {
-            Some(MouseTracker::with_defaults())
-        } else {
-            None
-        };
-
-        let animation = AnimationState {
-            motion_player: None,
-            expression_manager: ExpressionManager::new(),
-            eye_blink,
-            breath,
-            lip_sync,
-            mouse_tracker,
-        };
-
-        let mesh = MeshState {
-            mesh_buffers,
-            textures,
-            clipping_resources,
-            mask_target,
-        };
-
-        let id = format!("model_{}", self.models.len());
-        let handle = ModelHandle {
-            index: self.models.len(),
-            id: id.clone(),
-        };
-
-        self.models.push(LoadedModel {
-            id,
-            path: std::path::PathBuf::new(),
-            runtime,
-            motions: std::collections::BTreeMap::new(),
-            expressions: Vec::new(),
-            animation,
-            mesh,
-            transform,
-            bounds,
-            scale: 1.0,
-            dirty: true,
-        });
-
-        self.needs_redraw = true;
-        Ok(handle)
+        self.register_model(runtime, textures, bounds, PathBuf::new(), BTreeMap::new(), Vec::new())
     }
 
     /// Loads an AI-rigged model directly into the engine.
@@ -671,7 +489,6 @@ impl Live2dEngine {
         let bounds = ModelBounds::from_drawables(runtime.meshes())
             .ok_or_else(|| EngineError::ModelLoad("model has no drawable bounds".into()))?;
 
-        // Decode textures from PNG bytes.
         let mut textures = Vec::with_capacity(texture_pngs.len());
         for png_bytes in &texture_pngs {
             let img = image::load_from_memory(png_bytes)
@@ -684,6 +501,29 @@ impl Live2dEngine {
             );
         }
 
+        self.register_model(runtime, textures, bounds, PathBuf::new(), BTreeMap::new(), Vec::new())
+    }
+
+    fn create_textures(&self, decoded: &[crate::assets::DecodedTexture]) -> Result<Vec<WgpuTexture>, EngineError> {
+        decoded
+            .iter()
+            .map(|tex| {
+                self.renderer
+                    .create_rgba8_texture(self.ctx.device(), self.ctx.queue(), tex.width(), tex.height(), tex.rgba())
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| EngineError::ModelLoad(e.to_string()))
+    }
+
+    fn register_model(
+        &mut self,
+        runtime: ModelRuntime,
+        textures: Vec<WgpuTexture>,
+        bounds: ModelBounds,
+        path: PathBuf,
+        motion_groups: BTreeMap<String, Vec<PathBuf>>,
+        expressions: Vec<PathBuf>,
+    ) -> Result<ModelHandle, EngineError> {
         let mesh_buffers = WgpuMeshBuffers::from_drawables(self.ctx.device(), runtime.meshes())
             .ok_or_else(|| EngineError::ModelLoad("failed to create mesh buffers".into()))?;
 
@@ -694,46 +534,13 @@ impl Live2dEngine {
         let mask_target = self.renderer.create_mask_render_target(self.ctx.device(), MASK_TEXTURE_SIZE)
             .map_err(|e| EngineError::ModelLoad(e.to_string()))?;
 
-        let config_w = self.ctx.config();
+        let config = self.ctx.config();
         let transform = self.renderer.create_transform(
             self.ctx.device(),
-            &fit_model_matrix(bounds, config_w.width, config_w.height, 1.0),
+            &fit_model_matrix(bounds, config.width, config.height, 1.0),
         );
 
-        let has_eye_params = runtime.parameter_ids().iter().any(|id| {
-            matches!(id.as_str(), "ParamEyeLOpen" | "ParamEyeROpen" | "ParamEyeOpen")
-        });
-        let eye_blink = if has_eye_params {
-            Some(EyeBlink::with_defaults())
-        } else {
-            None
-        };
-        let breath = Some(Breath::with_defaults());
-
-        let lip_sync_config = runtime.lip_sync_config_from_model();
-        let lip_sync = if !lip_sync_config.parameter_indices.is_empty() || runtime.parameter_ids().iter().any(|id| id == "ParamMouthOpenY") {
-            Some(LipSync::new(lip_sync_config))
-        } else {
-            None
-        };
-
-        let has_tracking_params = runtime.parameter_ids().iter().any(|id| {
-            matches!(id.as_str(), "ParamAngleX" | "ParamAngleY" | "ParamEyeBallX" | "ParamEyeBallY")
-        });
-        let mouse_tracker = if has_tracking_params {
-            Some(MouseTracker::with_defaults())
-        } else {
-            None
-        };
-
-        let animation = AnimationState {
-            motion_player: None,
-            expression_manager: ExpressionManager::new(),
-            eye_blink,
-            breath,
-            lip_sync,
-            mouse_tracker,
-        };
+        let animation = Self::build_animation_state(&runtime);
 
         let mesh = MeshState {
             mesh_buffers,
@@ -750,10 +557,10 @@ impl Live2dEngine {
 
         self.models.push(LoadedModel {
             id,
-            path: std::path::PathBuf::new(),
+            path,
             runtime,
-            motions: std::collections::BTreeMap::new(),
-            expressions: Vec::new(),
+            motions: motion_groups,
+            expressions,
             animation,
             mesh,
             transform,
@@ -762,8 +569,52 @@ impl Live2dEngine {
             dirty: true,
         });
 
+        for plugin in &mut self.plugins {
+            plugin.on_model_loaded(&handle);
+        }
+
         self.needs_redraw = true;
         Ok(handle)
+    }
+
+    fn build_animation_state(runtime: &ModelRuntime) -> AnimationState {
+        let has_eye_params = runtime.parameter_ids().iter().any(|id| {
+            matches!(id.as_str(), "ParamEyeLOpen" | "ParamEyeROpen" | "ParamEyeOpen")
+        });
+        let eye_blink = if has_eye_params {
+            Some(EyeBlink::with_defaults())
+        } else {
+            None
+        };
+
+        let breath = Some(Breath::with_defaults());
+
+        let lip_sync_config = runtime.lip_sync_config_from_model();
+        let lip_sync = if !lip_sync_config.parameter_indices.is_empty()
+            || runtime.parameter_ids().iter().any(|id| id == "ParamMouthOpenY")
+        {
+            Some(LipSync::new(lip_sync_config))
+        } else {
+            None
+        };
+
+        let has_tracking_params = runtime.parameter_ids().iter().any(|id| {
+            matches!(id.as_str(), "ParamAngleX" | "ParamAngleY" | "ParamEyeBallX" | "ParamEyeBallY")
+        });
+        let mouse_tracker = if has_tracking_params {
+            Some(MouseTracker::with_defaults())
+        } else {
+            None
+        };
+
+        AnimationState {
+            motion_player: None,
+            expression_manager: ExpressionManager::new(),
+            eye_blink,
+            breath,
+            lip_sync,
+            mouse_tracker,
+        }
     }
 
     /// Plays a motion from a JSON string (web-compatible).
@@ -982,7 +833,7 @@ impl RunConfig {
 ///
 /// ```no_run
 /// fn main() -> Result<(), Box<dyn std::error::Error>> {
-///     mocari::engine::run("assets/models/Ren/Ren.model3.json")
+///     Ok(mocari::engine::run("assets/models/Ren/Ren.model3.json")?)
 /// }
 /// ```
 pub fn run(model_path: &str) -> Result<(), EngineError> {
@@ -995,10 +846,10 @@ pub fn run(model_path: &str) -> Result<(), EngineError> {
 /// use mocari::engine::RunConfig;
 ///
 /// fn main() -> Result<(), Box<dyn std::error::Error>> {
-///     mocari::engine::run_with_config(
+///     Ok(mocari::engine::run_with_config(
 ///         "assets/models/Ren/Ren.model3.json",
 ///         RunConfig::new().title("My Model").size(800, 600),
-///     )
+///     )?)
 /// }
 /// ```
 pub fn run_with_config(model_path: &str, config: RunConfig) -> Result<(), EngineError> {
@@ -1008,11 +859,7 @@ pub fn run_with_config(model_path: &str, config: RunConfig) -> Result<(), Engine
         .map_err(|e| EngineError::Surface(e.to_string()))?;
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
 
-    let app = App {
-        model_path,
-        config,
-        state: None,
-    };
+    let app = Live2dApp::new_regular(model_path, config);
 
     #[cfg(target_arch = "wasm32")]
     {
@@ -1038,7 +885,7 @@ pub fn run_with_config(model_path: &str, config: RunConfig) -> Result<(), Engine
 ///
 /// ```no_run
 /// fn main() -> Result<(), Box<dyn std::error::Error>> {
-///     mocari::engine::run_desktop_pet("assets/models/Ren/Ren.model3.json")
+///     Ok(mocari::engine::run_desktop_pet("assets/models/Ren/Ren.model3.json")?)
 /// }
 /// ```
 pub fn run_desktop_pet(model_path: &str) -> Result<(), EngineError> {
@@ -1056,46 +903,87 @@ pub fn run_desktop_pet_with_config(
         .map_err(|e| EngineError::Surface(e.to_string()))?;
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
 
-    let mut app = DesktopPetApp {
-        model_path,
-        config,
-        state: None,
-    };
+    let mut app = Live2dApp::new_desktop_pet(model_path, config);
 
     event_loop
         .run_app(&mut app)
         .map_err(|e| EngineError::Surface(e.to_string()))
 }
 
-struct App {
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-    model_path: String,
-    config: RunConfig,
-    state: Option<AppState>,
+enum WindowConfig {
+    Regular { title: String, width: u32, height: u32 },
+    DesktopPet(DesktopPetConfig),
 }
 
-struct AppState {
+struct Live2dApp {
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    model_path: String,
+    window_config: WindowConfig,
+    state: Option<LiveAppState>,
+}
+
+struct LiveAppState {
     engine: Live2dEngine,
     window: Arc<Window>,
     last_frame: std::time::Instant,
+    is_interactive: bool,
 }
 
-impl winit::application::ApplicationHandler for App {
+impl Live2dApp {
+    fn new_regular(model_path: String, config: RunConfig) -> Self {
+        Self {
+            model_path,
+            window_config: WindowConfig::Regular {
+                title: config.title,
+                width: config.width,
+                height: config.height,
+            },
+            state: None,
+        }
+    }
+
+    fn new_desktop_pet(model_path: String, config: DesktopPetConfig) -> Self {
+        Self {
+            model_path,
+            window_config: WindowConfig::DesktopPet(config),
+            state: None,
+        }
+    }
+
+    fn is_desktop_pet(&self) -> bool {
+        matches!(self.window_config, WindowConfig::DesktopPet(_))
+    }
+}
+
+impl winit::application::ApplicationHandler for Live2dApp {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         if self.state.is_some() {
             return;
         }
 
-        let attrs = Window::default_attributes()
-            .with_title(&self.config.title)
-            .with_inner_size(winit::dpi::LogicalSize::new(self.config.width, self.config.height));
-
-        let window = match event_loop.create_window(attrs) {
-            Ok(w) => Arc::new(w),
-            Err(e) => {
-                eprintln!("failed to create window: {e}");
-                event_loop.exit();
-                return;
+        let window = match &self.window_config {
+            WindowConfig::Regular { title, width, height } => {
+                let attrs = Window::default_attributes()
+                    .with_title(title)
+                    .with_inner_size(winit::dpi::LogicalSize::new(*width, *height));
+                match event_loop.create_window(attrs) {
+                    Ok(w) => Arc::new(w),
+                    Err(e) => {
+                        eprintln!("failed to create window: {e}");
+                        event_loop.exit();
+                        return;
+                    }
+                }
+            }
+            WindowConfig::DesktopPet(config) => {
+                match config.create_window(event_loop) {
+                    Ok(w) => w,
+                    Err(e) => {
+                        eprintln!("failed to create window: {e}");
+                        event_loop.exit();
+                        return;
+                    }
+                }
             }
         };
 
@@ -1113,6 +1001,7 @@ impl winit::application::ApplicationHandler for App {
         _window_id: winit::window::WindowId,
         event: winit::event::WindowEvent,
     ) {
+        let is_pet = self.is_desktop_pet();
         let Some(state) = self.state.as_mut() else {
             return;
         };
@@ -1138,127 +1027,7 @@ impl winit::application::ApplicationHandler for App {
                     event_loop.exit();
                 }
             }
-            _ => {}
-        }
-    }
-
-    fn about_to_wait(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {
-        if let Some(state) = self.state.as_ref()
-            && state.engine.needs_continuous_redraw()
-        {
-            state.window.request_redraw();
-        }
-    }
-}
-
-impl App {
-    #[cfg(not(target_arch = "wasm32"))]
-    fn init_engine(&mut self, event_loop: &winit::event_loop::ActiveEventLoop, window: Arc<Window>) {
-        match pollster::block_on(Live2dEngine::new(window.clone())) {
-            Ok(mut engine) => {
-                if !self.model_path.is_empty()
-                    && let Err(e) = engine.load_model(&self.model_path)
-                {
-                    eprintln!("failed to load model: {e}");
-                    event_loop.exit();
-                    return;
-                }
-                window.request_redraw();
-                self.state = Some(AppState {
-                    engine,
-                    window,
-                    last_frame: std::time::Instant::now(),
-                });
-            }
-            Err(e) => {
-                eprintln!("failed to initialize engine: {e}");
-                event_loop.exit();
-            }
-        }
-    }
-}
-
-struct DesktopPetApp {
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
-    model_path: String,
-    config: DesktopPetConfig,
-    state: Option<DesktopPetState>,
-}
-
-struct DesktopPetState {
-    engine: Live2dEngine,
-    window: Arc<Window>,
-    last_frame: std::time::Instant,
-    is_interactive: bool,
-}
-
-impl winit::application::ApplicationHandler for DesktopPetApp {
-    fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        if self.state.is_some() {
-            return;
-        }
-
-        let window = match self.config.create_window(event_loop) {
-            Ok(w) => w,
-            Err(e) => {
-                eprintln!("failed to create window: {e}");
-                event_loop.exit();
-                return;
-            }
-        };
-
-        #[cfg(target_arch = "wasm32")]
-        let _ = window;
-        #[cfg(not(target_arch = "wasm32"))]
-        match pollster::block_on(Live2dEngine::new(window.clone())) {
-            Ok(mut engine) => {
-                engine.set_clear_color(self.config.clear_color);
-                if !self.model_path.is_empty()
-                    && let Err(e) = engine.load_model(&self.model_path)
-                {
-                    eprintln!("failed to load model: {e}");
-                    event_loop.exit();
-                    return;
-                }
-                window.request_redraw();
-                self.state = Some(DesktopPetState {
-                    engine,
-                    window,
-                    last_frame: std::time::Instant::now(),
-                    is_interactive: false,
-                });
-            }
-            Err(e) => {
-                eprintln!("failed to initialize engine: {e}");
-                event_loop.exit();
-            }
-        }
-    }
-
-    fn window_event(
-        &mut self,
-        event_loop: &winit::event_loop::ActiveEventLoop,
-        _window_id: winit::window::WindowId,
-        event: winit::event::WindowEvent,
-    ) {
-        let Some(state) = self.state.as_mut() else {
-            return;
-        };
-
-        match event {
-            winit::event::WindowEvent::CloseRequested => event_loop.exit(),
-
-            winit::event::WindowEvent::Resized(size) => {
-                state.engine.resize(size);
-                state.window.request_redraw();
-            }
-
-            winit::event::WindowEvent::ScaleFactorChanged { .. } => {
-                state.engine.resize(state.window.inner_size());
-                state.window.request_redraw();
-            }
-
-            winit::event::WindowEvent::CursorMoved { position, .. } => {
+            winit::event::WindowEvent::CursorMoved { position, .. } if is_pet => {
                 let size = state.window.inner_size();
                 let cx = size.width as f64 / 2.0;
                 let cy = size.height as f64 / 2.0;
@@ -1275,36 +1044,21 @@ impl winit::application::ApplicationHandler for DesktopPetApp {
                     let _ = state.engine.set_click_through(true);
                 }
             }
-
             winit::event::WindowEvent::MouseInput {
                 state: button_state,
                 button: winit::event::MouseButton::Left,
                 ..
-            } => {
+            } if is_pet => {
                 if button_state == winit::event::ElementState::Pressed && state.is_interactive {
                     let _ = state.window.drag_window();
                 }
             }
-
-            winit::event::WindowEvent::KeyboardInput { event, .. } => {
-                if event.state == winit::event::ElementState::Pressed
-                    && event.logical_key
-                        == winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape)
-                {
-                    event_loop.exit();
-                }
-            }
-
-            winit::event::WindowEvent::RedrawRequested => {
-                let now = std::time::Instant::now();
-                let delta = now.duration_since(state.last_frame).as_secs_f32();
-                state.last_frame = now;
-
-                state.engine.tick(delta);
-                if let Err(e) = state.engine.render() {
-                    eprintln!("render failed: {e}");
-                    event_loop.exit();
-                }
+            winit::event::WindowEvent::KeyboardInput { event, .. } if is_pet
+                && event.state == winit::event::ElementState::Pressed
+                && event.logical_key
+                    == winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape)
+            => {
+                event_loop.exit();
             }
             _ => {}
         }
@@ -1315,6 +1069,37 @@ impl winit::application::ApplicationHandler for DesktopPetApp {
             && state.engine.needs_continuous_redraw()
         {
             state.window.request_redraw();
+        }
+    }
+}
+
+impl Live2dApp {
+    #[cfg(not(target_arch = "wasm32"))]
+    fn init_engine(&mut self, event_loop: &winit::event_loop::ActiveEventLoop, window: Arc<Window>) {
+        match pollster::block_on(Live2dEngine::new(window.clone())) {
+            Ok(mut engine) => {
+                if let WindowConfig::DesktopPet(ref config) = self.window_config {
+                    engine.set_clear_color(config.clear_color);
+                }
+                if !self.model_path.is_empty()
+                    && let Err(e) = engine.load_model(&self.model_path)
+                {
+                    eprintln!("failed to load model: {e}");
+                    event_loop.exit();
+                    return;
+                }
+                window.request_redraw();
+                self.state = Some(LiveAppState {
+                    engine,
+                    window,
+                    last_frame: std::time::Instant::now(),
+                    is_interactive: false,
+                });
+            }
+            Err(e) => {
+                eprintln!("failed to initialize engine: {e}");
+                event_loop.exit();
+            }
         }
     }
 }

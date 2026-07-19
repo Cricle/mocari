@@ -8,6 +8,9 @@ class GzipHandler(http.server.SimpleHTTPRequestHandler):
     extensions_map = {
         **http.server.SimpleHTTPRequestHandler.extensions_map,
         '.wasm': 'application/wasm',
+        '.js': 'application/javascript',
+        '.mjs': 'application/javascript',
+        '.json': 'application/json',
     }
 
     def end_headers(self):

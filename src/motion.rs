@@ -16,7 +16,6 @@ use crate::{
 
 const PARAMETER_TARGET: &str = "Parameter";
 const PART_OPACITY_TARGET: &str = "PartOpacity";
-const DRAWABLE_TARGET: &str = "Drawable";
 
 #[derive(Debug, Clone)]
 /// Plays a parsed `motion3.json` animation against a [`ModelRuntime`].
@@ -194,25 +193,6 @@ impl MotionPlayer {
                     };
                     let value = apply_motion_fade(1.0, sampled, curve_weight);
                     runtime.set_part_opacity_by_index(index, value);
-                }
-                DRAWABLE_TARGET => {
-                    let Some((drawable_id, field)) = curve.id().rsplit_once('.') else {
-                        continue;
-                    };
-                    let Some(drawable_index) = runtime.drawable_index(drawable_id) else {
-                        continue;
-                    };
-                    match field {
-                        "Opacity" => {
-                            let current = runtime.meshes().get(drawable_index).map(|m| m.opacity()).unwrap_or(1.0);
-                            let faded = apply_motion_fade(current, sampled, curve_weight);
-                            runtime.set_drawable_opacity_override(drawable_index, faded);
-                        }
-                        "DrawOrder" => {
-                            runtime.set_drawable_draw_order_override(drawable_index, sampled);
-                        }
-                        _ => {}
-                    }
                 }
                 _ => {}
             }

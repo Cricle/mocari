@@ -27,12 +27,12 @@ pub struct Layer {
     pub image: RgbaImage,
     pub bounds: BoundingBox,
     pub z_order: i32,
-    #[expect(dead_code)]
+    
     pub confidence: f32,
 }
 
 #[derive(Debug, Clone)]
-#[expect(dead_code)]
+
 pub struct Bone {
     pub id: String,
     pub name: String,
@@ -43,7 +43,7 @@ pub struct Bone {
 #[derive(Debug, Clone)]
 pub struct Parameter {
     pub id: String,
-    #[expect(dead_code)]
+    
     pub name: String,
     pub min: f32,
     pub max: f32,
@@ -94,6 +94,31 @@ pub struct ParameterGroup {
     pub ids: Vec<String>,
 }
 
+#[derive(Debug, Clone)]
+
+pub struct Deformer {
+    pub id: String,
+    pub name: String,
+    pub deformer_type: DeformerType,
+    pub origin: [f32; 2],
+    pub influence: f32,
+    pub control_points: Vec<[f32; 2]>,
+}
+
+#[derive(Debug, Clone)]
+pub enum DeformerType {
+    Warp,
+    Rotation,
+    Bezier,
+}
+
+#[derive(Debug, Clone)]
+pub struct BoneWeight {
+    pub mesh_name: String,
+    pub bone_id: String,
+    pub weight: f32,
+}
+
 pub struct PipelineResult {
     pub layers: Vec<Layer>,
     pub meshes: Vec<ArtMesh>,
@@ -111,12 +136,16 @@ const LAYER_ORDER: &[&str] = &[
     "right_leg",
     "head",
     "face_base",
-    "mouth",
-    "nose",
-    "left_eye",
-    "right_eye",
     "left_eyebrow",
     "right_eyebrow",
+    "left_eye",
+    "right_eye",
+    "left_eye_highlight",
+    "right_eye_highlight",
+    "nose",
+    "mouth",
+    "left_blush",
+    "right_blush",
     "front_hair",
     "left_hand",
     "right_hand",

@@ -20,6 +20,7 @@ web = ["wgpu", "dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "de
 mcp = ["dep:rmcp", "dep:tokio", "dep:clap"]
 mcp-http = ["mcp", "rmcp/transport-streamable-http-server"]
 ai = []
+generate = ["dep:live2d-automation"]
 
 [dependencies]
 image = { version = "0.25.9", default-features = false, features = ["png"] }
@@ -28,6 +29,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 thiserror = "2"
 glam = "0.33"
+live2d-automation = { path = "tools/live2d-automation", default-features = false, optional = true }
 wgpu = { version = "30.0.0", optional = true }
 rmcp = { version = "2", default-features = false, features = ["server", "transport-io", "macros", "schemars"], optional = true }
 tokio = { version = "1", features = ["full"], optional = true }
@@ -45,7 +47,8 @@ features = [
     "Performance",
     "Request", "RequestInit", "RequestMode",
     "Response", "Headers", "HtmlCanvasElement", "console",
-    "MouseEvent",
+    "MouseEvent", "FileReader", "Blob", "File", "FileList",
+    "DomRect", "DomRectReadOnly", "HtmlInputElement", "Event",
 ]
 optional = true
 
@@ -84,9 +87,13 @@ required-features = ["web"]
 
 [[test]]
 name = "mcp"
-path = "tests/mcp_tests.rs"
+path = "tests/mcp/main.rs"
 required-features = ["mcp"]
 
 [[test]]
 name = "wgpu_renderer"
 required-features = ["wgpu"]
+
+[[test]]
+name = "compat_motion3"
+path = "tests/compat/motion3_curve_sampling.rs"

@@ -124,12 +124,12 @@ pub struct ModelRuntime {
     glues: Moc3Glues,
     parts: Moc3Parts,
     draw_order_groups: Option<Moc3DrawOrderGroups>,
-    drawable_index: HashMap<String, usize>,
-    parameter_index: HashMap<String, usize>,
+    drawable_index: HashMap<Box<str>, usize>,
+    parameter_index: HashMap<Box<str>, usize>,
     parameter_values: Vec<f32>,
     parameter_overrides: Vec<Option<f32>>,
     physics: Option<PhysicsRuntime>,
-    part_index: HashMap<String, usize>,
+    part_index: HashMap<Box<str>, usize>,
     part_opacity_overrides: Vec<Option<f32>>,
     part_opacities: Vec<f32>,
     pose_groups: Vec<PoseGroup>,
@@ -144,6 +144,16 @@ pub struct ModelRuntime {
     drawable_draw_order_overrides: Vec<Option<f32>>,
     drawable_vertex_overrides: Vec<Option<Vec<f32>>>,
     user_data: Option<UserData3>,
+    // Scratch buffers to avoid per-frame allocations
+    scratch_drawable_part_opacities: Vec<f32>,
+    scratch_pose_selection: Vec<f32>,
+    scratch_pose_faded: Vec<f32>,
+    scratch_drawable_draw_orders: Vec<i32>,
+    scratch_part_draw_orders: Vec<i32>,
+    scratch_part_enable: Vec<bool>,
+    // Dirty tracking: when false after a frame, skip mesh rebuild
+    dirtied: bool,
+    parameter_values_generation: u64,
 }
 
 impl ModelRuntime {
@@ -216,6 +226,14 @@ impl ModelRuntime {
             drawable_draw_order_overrides: vec![None; drawable_count],
             drawable_vertex_overrides: vec![None; drawable_count],
             user_data: None,
+            scratch_drawable_part_opacities: Vec::new(),
+            scratch_pose_selection: Vec::new(),
+            scratch_pose_faded: Vec::new(),
+            scratch_drawable_draw_orders: Vec::new(),
+            scratch_part_draw_orders: Vec::new(),
+            scratch_part_enable: Vec::new(),
+            dirtied: true,
+            parameter_values_generation: 0,
         };
         runtime.update_meshes()?;
         Some(runtime)
@@ -340,7 +358,12 @@ impl ModelRuntime {
             return false;
         };
         let (minimum, maximum) = parameter_clamp_range(&self.bindings, index);
-        *slot = clamp_parameter_value(value, minimum, maximum);
+        let clamped = clamp_parameter_value(value, minimum, maximum);
+        if *slot != clamped {
+            *slot = clamped;
+            self.parameter_values_generation = self.parameter_values_generation.wrapping_add(1);
+            self.dirtied = true;
+        }
         true
     }
 
@@ -404,7 +427,11 @@ impl ModelRuntime {
         let Some((minimum, maximum)) = self.parameter_range_by_index(index) else {
             return false;
         };
-        self.parameter_overrides[index] = Some(clamp_parameter_value(value, minimum, maximum));
+        let clamped = clamp_parameter_value(value, minimum, maximum);
+        if self.parameter_overrides[index] != Some(clamped) {
+            self.parameter_overrides[index] = Some(clamped);
+            self.dirtied = true;
+        }
         true
     }
 
@@ -437,13 +464,19 @@ impl ModelRuntime {
         let Some(slot) = self.parameter_overrides.get_mut(index) else {
             return false;
         };
-        *slot = None;
+        if slot.is_some() {
+            *slot = None;
+            self.dirtied = true;
+        }
         true
     }
 
     /// Clears all pending parameter overrides.
     pub fn clear_parameter_overrides(&mut self) {
-        self.parameter_overrides.fill(None);
+        if self.parameter_overrides.iter().any(|o| o.is_some()) {
+            self.parameter_overrides.fill(None);
+            self.dirtied = true;
+        }
     }
 
     /// Applies all pending parameter overrides to the current parameter values.
@@ -560,6 +593,7 @@ impl ModelRuntime {
             self.bindings.parameter_default_values(),
             delta_time_seconds,
         );
+        self.dirtied = true;
         true
     }
 
@@ -594,36 +628,43 @@ impl ModelRuntime {
         let Some(slot) = self.part_opacity_overrides.get_mut(index) else {
             return false;
         };
-        *slot = Some(value.clamp(0.0, 1.0));
+        let clamped = value.clamp(0.0, 1.0);
+        if *slot != Some(clamped) {
+            *slot = Some(clamped);
+            self.dirtied = true;
+        }
         true
     }
 
     /// Clears all part opacity overrides.
     pub fn reset_part_opacities(&mut self) {
-        self.part_opacity_overrides
-            .iter_mut()
-            .for_each(|o| *o = None);
+        if self.part_opacity_overrides.iter().any(|o| o.is_some()) {
+            self.part_opacity_overrides.iter_mut().for_each(|o| *o = None);
+            self.dirtied = true;
+        }
     }
 
     /// Advances pose fade state by `delta_seconds`.
     ///
     /// Call this once per frame for models that include a `pose3.json` file.
     pub fn apply_pose(&mut self, delta_seconds: f32) {
+        if self.pose_groups.is_empty() {
+            return;
+        }
         for group in &self.pose_groups {
-            let selection: Vec<f32> = group
-                .members
-                .iter()
-                .map(|&part| self.part_selection_opacity(part))
-                .collect();
-            let mut faded: Vec<f32> = group
-                .members
-                .iter()
-                .map(|&part| self.pose_opacities[part])
-                .collect();
+            let len = group.members.len();
+            self.scratch_pose_selection.clear();
+            self.scratch_pose_selection.reserve(len);
+            self.scratch_pose_faded.clear();
+            self.scratch_pose_faded.reserve(len);
+            for &part in &group.members {
+                self.scratch_pose_selection.push(self.part_selection_opacity(part));
+                self.scratch_pose_faded.push(self.pose_opacities[part]);
+            }
 
             if update_pose_group_opacities(
-                &selection,
-                &mut faded,
+                &self.scratch_pose_selection,
+                &mut self.scratch_pose_faded,
                 delta_seconds,
                 self.pose_fade_time,
             )
@@ -632,7 +673,7 @@ impl ModelRuntime {
                 continue;
             }
 
-            for (opacity, &part) in faded.iter().zip(&group.members) {
+            for (opacity, &part) in self.scratch_pose_faded.iter().zip(&group.members) {
                 self.pose_opacities[part] = *opacity;
             }
             for (member_position, &part) in group.members.iter().enumerate() {
@@ -642,6 +683,7 @@ impl ModelRuntime {
                     &group.links[member_position],
                 );
             }
+            self.dirtied = true;
         }
     }
 
@@ -658,8 +700,27 @@ impl ModelRuntime {
     }
 
     fn update_part_opacities(&mut self) {
-        self.update_direct_part_opacities();
-        self.apply_parent_part_opacities();
+        if self.part_opacity_overrides.iter().any(|o| o.is_some()) {
+            self.update_direct_part_opacities();
+            self.apply_parent_part_opacities();
+        } else {
+            self.update_part_opacities_no_overrides();
+        }
+    }
+
+    fn update_part_opacities_no_overrides(&mut self) {
+        for index in 0..self.part_opacities.len() {
+            self.part_opacities[index] = self.pose_opacities[index];
+        }
+        for index in 0..self.part_opacities.len() {
+            let mut opacity = self.part_opacities[index];
+            let mut parent = self.parts.parent_part_index(index);
+            while let Some(parent_index) = parent.and_then(|p| usize::try_from(p).ok()) {
+                opacity *= self.part_opacities[parent_index];
+                parent = self.parts.parent_part_index(parent_index);
+            }
+            self.part_opacities[index] = opacity;
+        }
     }
 
     fn update_direct_part_opacities(&mut self) {
@@ -681,16 +742,19 @@ impl ModelRuntime {
         }
     }
 
-    fn drawable_part_opacities(&self) -> Vec<f32> {
-        (0..self.art_meshes.meshes().len())
-            .map(|drawable_index| {
-                self.offscreen
-                    .drawable_parent_part_index(drawable_index)
-                    .and_then(|p| usize::try_from(p).ok())
-                    .and_then(|part_index| self.part_opacities.get(part_index).copied())
-                    .unwrap_or(1.0)
-            })
-            .collect()
+    fn update_drawable_part_opacities(&mut self) {
+        let count = self.art_meshes.meshes().len();
+        self.scratch_drawable_part_opacities.clear();
+        self.scratch_drawable_part_opacities.reserve(count);
+        for drawable_index in 0..count {
+            let opacity = self
+                .offscreen
+                .drawable_parent_part_index(drawable_index)
+                .and_then(|p| usize::try_from(p).ok())
+                .and_then(|part_index| self.part_opacities.get(part_index).copied())
+                .unwrap_or(1.0);
+            self.scratch_drawable_part_opacities.push(opacity);
+        }
     }
 
     /// Rebuilds drawable meshes from the current runtime state.
@@ -699,17 +763,38 @@ impl ModelRuntime {
     /// players, changing part opacities, or advancing pose state. Returns `None`
     /// when the model data cannot produce a valid mesh update.
     pub fn update_meshes(&mut self) -> Option<()> {
+        if !self.dirtied {
+            return Some(());
+        }
         self.update_part_opacities();
-        let drawable_part_opacities = self.drawable_part_opacities();
-        self.rebuild_or_update_meshes(&drawable_part_opacities)?;
+        self.update_drawable_part_opacities();
+        self.rebuild_or_update_meshes()?;
         self.apply_mesh_post_processing()?;
         self.apply_drawable_color_overrides();
         self.apply_drawable_motion_overrides();
         self.apply_drawable_visibility();
+        self.dirtied = false;
         Some(())
     }
 
-    fn rebuild_or_update_meshes(&mut self, drawable_part_opacities: &[f32]) -> Option<()> {
+    /// Forces the next [`ModelRuntime::update_meshes`] call to rebuild meshes
+    /// from scratch, even if no parameter or opacity change was recorded.
+    ///
+    /// Use this when mesh data was mutated externally and the dirty tracker
+    /// would otherwise skip the rebuild.
+    pub fn mark_dirty(&mut self) {
+        self.dirtied = true;
+    }
+
+    /// Returns true when no parameter, opacity, or drawable override has changed
+    /// since the last [`ModelRuntime::update_meshes`] call completed.
+    ///
+    /// When this returns `false`, calling `update_meshes` is a no-op.
+    pub fn is_dirty(&self) -> bool {
+        self.dirtied
+    }
+
+    fn rebuild_or_update_meshes(&mut self) -> Option<()> {
         if self.meshes.len() == self.art_meshes.meshes().len() {
             update_moc3_drawable_meshes_with_parameters_offscreen_and_part_opacities(
                 &mut self.meshes,
@@ -721,7 +806,7 @@ impl ModelRuntime {
                 &self.ids,
                 &self.offscreen,
                 &self.parameter_values,
-                drawable_part_opacities,
+                &self.scratch_drawable_part_opacities,
             )?;
         } else {
             self.meshes = build_moc3_drawable_meshes_with_parameters_offscreen_and_part_opacities(
@@ -732,7 +817,7 @@ impl ModelRuntime {
                 &self.ids,
                 &self.offscreen,
                 &self.parameter_values,
-                drawable_part_opacities,
+                &self.scratch_drawable_part_opacities,
             )?;
         }
         Some(())
@@ -789,29 +874,32 @@ impl ModelRuntime {
         let Some(groups) = self.draw_order_groups.as_ref() else {
             return;
         };
-        let drawable_draw_orders: Vec<i32> = self
-            .meshes
-            .iter()
-            .map(|mesh| draw_order_from_raw(mesh.draw_order()))
-            .collect();
+
+        self.scratch_drawable_draw_orders.clear();
+        self.scratch_drawable_draw_orders.reserve(self.meshes.len());
+        for mesh in &self.meshes {
+            self.scratch_drawable_draw_orders.push(draw_order_from_raw(mesh.draw_order()));
+        }
 
         let part_count = self.parts.part_count();
-        let mut part_draw_orders = vec![0i32; part_count];
-        let mut part_enable = vec![false; part_count];
+        self.scratch_part_draw_orders.clear();
+        self.scratch_part_draw_orders.resize(part_count, 0);
+        self.scratch_part_enable.clear();
+        self.scratch_part_enable.resize(part_count, false);
         for index in 0..part_count {
             if let Some(raw) =
                 self.parts
                     .interpolate_draw_order(index, &self.bindings, &self.parameter_values)
             {
-                part_draw_orders[index] = draw_order_from_raw(raw);
-                part_enable[index] = true;
+                self.scratch_part_draw_orders[index] = draw_order_from_raw(raw);
+                self.scratch_part_enable[index] = true;
             }
         }
 
         let Some(render_orders) = groups.render_orders(
-            &drawable_draw_orders,
-            &part_draw_orders,
-            &part_enable,
+            &self.scratch_drawable_draw_orders,
+            &self.scratch_part_draw_orders,
+            &self.scratch_part_enable,
             self.offscreen.part_offscreen_indices(),
             self.offscreen.offscreen_count(),
         ) else {
@@ -838,7 +926,10 @@ impl ModelRuntime {
         let Some(slot) = self.drawable_visible.get_mut(index) else {
             return false;
         };
-        *slot = visible;
+        if *slot != visible {
+            *slot = visible;
+            self.dirtied = true;
+        }
         true
     }
 
@@ -883,7 +974,10 @@ impl ModelRuntime {
         let Some(slot) = self.drawable_multiply_overrides.get_mut(index) else {
             return false;
         };
-        *slot = Some(color);
+        if *slot != Some(color) {
+            *slot = Some(color);
+            self.dirtied = true;
+        }
         true
     }
 
@@ -900,14 +994,22 @@ impl ModelRuntime {
         let Some(slot) = self.drawable_screen_overrides.get_mut(index) else {
             return false;
         };
-        *slot = Some(color);
+        if *slot != Some(color) {
+            *slot = Some(color);
+            self.dirtied = true;
+        }
         true
     }
 
     /// Clears all drawable color overrides.
     pub fn clear_drawable_color_overrides(&mut self) {
+        let had_any = self.drawable_multiply_overrides.iter().any(|o| o.is_some())
+            || self.drawable_screen_overrides.iter().any(|o| o.is_some());
         self.drawable_multiply_overrides.fill(None);
         self.drawable_screen_overrides.fill(None);
+        if had_any {
+            self.dirtied = true;
+        }
     }
 
     /// Sets a drawable opacity override by index.
@@ -915,7 +1017,11 @@ impl ModelRuntime {
         let Some(slot) = self.drawable_opacity_overrides.get_mut(index) else {
             return false;
         };
-        *slot = Some(value.clamp(0.0, 1.0));
+        let clamped = value.clamp(0.0, 1.0);
+        if *slot != Some(clamped) {
+            *slot = Some(clamped);
+            self.dirtied = true;
+        }
         true
     }
 
@@ -924,7 +1030,10 @@ impl ModelRuntime {
         let Some(slot) = self.drawable_draw_order_overrides.get_mut(index) else {
             return false;
         };
-        *slot = Some(value);
+        if *slot != Some(value) {
+            *slot = Some(value);
+            self.dirtied = true;
+        }
         true
     }
 
@@ -1051,10 +1160,10 @@ fn parameter_clamp_range(bindings: &Moc3KeyformBindings, index: usize) -> (f32, 
     (minimum, maximum)
 }
 
-fn build_index(ids: &[String]) -> HashMap<String, usize> {
+fn build_index(ids: &[String]) -> HashMap<Box<str>, usize> {
     ids.iter()
         .enumerate()
-        .map(|(index, id)| (id.clone(), index))
+        .map(|(index, id)| (id.as_str().into(), index))
         .collect()
 }
 
@@ -1080,7 +1189,7 @@ fn drawable_contains_point(mesh: &Moc3DrawableMesh, x: f32, y: f32) -> bool {
     (min_x..=max_x).contains(&x) && (min_y..=max_y).contains(&y)
 }
 
-fn build_pose_groups(pose: &Pose3, part_index: &HashMap<String, usize>) -> Vec<PoseGroup> {
+fn build_pose_groups(pose: &Pose3, part_index: &HashMap<Box<str>, usize>) -> Vec<PoseGroup> {
     pose.groups()
         .iter()
         .filter_map(|group| {
@@ -1094,7 +1203,7 @@ fn build_pose_groups(pose: &Pose3, part_index: &HashMap<String, usize>) -> Vec<P
                 links.push(
                     part.links()
                         .iter()
-                        .filter_map(|link| part_index.get(link).copied())
+                        .filter_map(|link| part_index.get(link.as_str()).copied())
                         .collect(),
                 );
             }
@@ -1143,7 +1252,8 @@ mod tests {
         runtime.pose_opacities = vec![1.0];
 
         runtime.update_part_opacities();
+        runtime.update_drawable_part_opacities();
 
-        assert_eq!(runtime.drawable_part_opacities(), vec![1.0]);
+        assert_eq!(runtime.scratch_drawable_part_opacities, vec![1.0]);
     }
 }

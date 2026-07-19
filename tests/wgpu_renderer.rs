@@ -1,5 +1,5 @@
 use mocari::{
-    core::Matrix44,
+    core::{Mat4, Mat4Ext},
     moc3::{Moc3DrawableBlendMode, Moc3DrawableMesh, Moc3DrawableVertex},
     render::wgpu::{
         WgpuClippingLayoutError, WgpuClippingPlan, WgpuClippingRect, WgpuDrawableVertex,
@@ -99,7 +99,7 @@ fn live2d_masked_wgsl_samples_inverse_mask_channel() {
 
 #[test]
 fn encodes_wgpu_transform_matrix() {
-    let mut matrix = Matrix44::identity();
+    let mut matrix = Mat4::IDENTITY;
     matrix.scale(2.0, 3.0);
     matrix.translate(4.0, 5.0);
 
@@ -168,7 +168,7 @@ fn mask_params_update_skips_unchanged_layout() {
 
 #[test]
 fn encodes_clip_params_from_draw_matrix_and_channel() {
-    let mut matrix = Matrix44::identity();
+    let mut matrix = Mat4::IDENTITY;
     matrix.scale(0.25, 0.5);
     matrix.translate(0.75, 0.25);
 
@@ -193,7 +193,7 @@ fn creates_clip_params_bind_group() {
     let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, 1);
 
     let params =
-        renderer.create_clip_params(&device, &Matrix44::identity(), WgpuMaskChannel::Red, false);
+        renderer.create_clip_params(&device, &Mat4::IDENTITY, WgpuMaskChannel::Red, false);
 
     let _ = params.buffer();
     let _ = params.bind_group();
@@ -204,8 +204,8 @@ fn creates_clip_params_bind_group() {
 fn clip_params_update_skips_unchanged_params() {
     let (device, queue) = wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
     let renderer = WgpuLive2dRenderer::new(&device, wgpu::TextureFormat::Rgba8UnormSrgb, 1);
-    let matrix = Matrix44::identity();
-    let mut changed = Matrix44::identity();
+    let matrix = Mat4::IDENTITY;
+    let mut changed = Mat4::IDENTITY;
     changed.scale(2.0, 1.0);
     let mut params = renderer.create_clip_params(&device, &matrix, WgpuMaskChannel::Red, false);
 
@@ -350,7 +350,7 @@ fn creates_mask_pipeline_and_encodes_mask_draw_call() {
     let texture = renderer
         .create_rgba8_texture(&device, &queue, 1, 1, &[255, 255, 255, 255])
         .unwrap();
-    let transform = renderer.create_transform(&device, &Matrix44::identity());
+    let transform = renderer.create_transform(&device, &Mat4::IDENTITY);
     let params = renderer.create_mask_params(
         &device,
         mocari::render::wgpu::WgpuClippingLayout::new(
@@ -404,9 +404,9 @@ fn creates_masked_pipeline_and_encodes_masked_draw_call() {
         .create_rgba8_texture(&device, &queue, 1, 1, &[255, 255, 255, 255])
         .unwrap();
     let mask_target = renderer.create_mask_render_target(&device, 16).unwrap();
-    let transform = renderer.create_transform(&device, &Matrix44::identity());
+    let transform = renderer.create_transform(&device, &Mat4::IDENTITY);
     let clip_params =
-        renderer.create_clip_params(&device, &Matrix44::identity(), WgpuMaskChannel::Red, false);
+        renderer.create_clip_params(&device, &Mat4::IDENTITY, WgpuMaskChannel::Red, false);
     let mesh = test_mesh_with_draw_order(0, 0.0);
     let buffers = WgpuMeshBuffers::from_drawables(&device, &[mesh]).unwrap();
     let drawable = &buffers.drawables()[0];
@@ -1238,7 +1238,7 @@ fn draws_with_uploaded_textures_and_transform() {
     let texture = renderer
         .create_rgba8_texture(&device, &queue, 1, 1, &[255, 255, 255, 255])
         .unwrap();
-    let mut matrix = Matrix44::identity();
+    let mut matrix = Mat4::IDENTITY;
     matrix.scale(0.5, 0.5);
     let transform = renderer.create_transform(&device, &matrix);
     let mesh = test_mesh_with_draw_order(0, 0.0);
@@ -1366,7 +1366,7 @@ fn draw_with_clipping_skips_empty_drawables() {
         .create_clipping_resources(&device, &clipping_plan)
         .unwrap();
     let mask_target = renderer.create_mask_render_target(&device, 16).unwrap();
-    let transform = renderer.create_transform(&device, &Matrix44::identity());
+    let transform = renderer.create_transform(&device, &Mat4::IDENTITY);
 
     let target = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("live2d.test.empty_drawable_target"),
@@ -1441,7 +1441,7 @@ fn draw_with_clipping_skips_transparent_drawables() {
         .create_clipping_resources(&device, &clipping_plan)
         .unwrap();
     let mask_target = renderer.create_mask_render_target(&device, 16).unwrap();
-    let transform = renderer.create_transform(&device, &Matrix44::identity());
+    let transform = renderer.create_transform(&device, &Mat4::IDENTITY);
 
     let target = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("live2d.test.transparent_clipped_drawable_target"),

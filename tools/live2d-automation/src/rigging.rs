@@ -85,6 +85,8 @@ pub fn setup_rigging(layers: &[Layer]) -> RiggingResult {
     let hit_areas = vec![
         HitArea { id: "HitHead".into(), name: "Head".into() },
         HitArea { id: "HitBody".into(), name: "Body".into() },
+        HitArea { id: "HitLeftHand".into(), name: "Left Hand".into() },
+        HitArea { id: "HitRightHand".into(), name: "Right Hand".into() },
     ];
 
     let groups = vec![
@@ -101,6 +103,131 @@ pub fn setup_rigging(layers: &[Layer]) -> RiggingResult {
     ];
 
     RiggingResult { bones, parameters, hit_areas, groups }
+}
+
+/// Create deformers for each mesh.
+pub fn create_deformers(meshes: &[ArtMesh]) -> Vec<Deformer> {
+    let mut deformers = Vec::new();
+
+    for (i, mesh) in meshes.iter().enumerate() {
+        // Calculate mesh center
+        let center = calculate_mesh_center(mesh);
+
+        // Create warp deformer
+        deformers.push(Deformer {
+            id: format!("mesh_{i}_warp"),
+            name: format!("Mesh {i} Warp"),
+            deformer_type: DeformerType::Warp,
+            origin: center,
+            influence: 1.0,
+            control_points: vec![
+                [center[0] - 50.0, center[1] - 50.0],
+                [center[0] + 50.0, center[1] - 50.0],
+                [center[0] - 50.0, center[1] + 50.0],
+                [center[0] + 50.0, center[1] + 50.0],
+            ],
+        });
+
+        // Create rotation deformer
+        deformers.push(Deformer {
+            id: format!("mesh_{i}_rotation"),
+            name: format!("Mesh {i} Rotation"),
+            deformer_type: DeformerType::Rotation,
+            origin: center,
+            influence: 1.0,
+            control_points: vec![center],
+        });
+
+        // Create bezier deformer for complex deformations
+        deformers.push(Deformer {
+            id: format!("mesh_{i}_bezier"),
+            name: format!("Mesh {i} Bezier"),
+            deformer_type: DeformerType::Bezier,
+            origin: center,
+            influence: 1.0,
+            control_points: create_bezier_control_points(center, mesh),
+        });
+    }
+
+    deformers
+}
+
+/// Create Bezier control points for a mesh.
+fn create_bezier_control_points(_center: [f32; 2], mesh: &ArtMesh) -> Vec<[f32; 2]> {
+    // Calculate mesh bounds
+    let (min_x, max_x, min_y, max_y) = mesh.vertices.iter().fold(
+        (f32::MAX, f32::MIN, f32::MAX, f32::MIN),
+        |(min_x, max_x, min_y, max_y), v| {
+            (min_x.min(v[0]), max_x.max(v[0]), min_y.min(v[1]), max_y.max(v[1]))
+        },
+    );
+
+    let width = max_x - min_x;
+    let height = max_y - min_y;
+
+    // Create 4x4 Bezier control point grid
+    let mut points = Vec::with_capacity(16);
+    for row in 0..4 {
+        for col in 0..4 {
+            let x = min_x + width * (col as f32 / 3.0);
+            let y = min_y + height * (row as f32 / 3.0);
+            points.push([x, y]);
+        }
+    }
+
+    points
+}
+
+/// Calculate the center of a mesh.
+fn calculate_mesh_center(mesh: &ArtMesh) -> [f32; 2] {
+    if mesh.vertices.is_empty() {
+        return [0.0, 0.0];
+    }
+
+    let mut sum_x = 0.0;
+    let mut sum_y = 0.0;
+
+    for vertex in &mesh.vertices {
+        sum_x += vertex[0];
+        sum_y += vertex[1];
+    }
+
+    let count = mesh.vertices.len() as f32;
+    [sum_x / count, sum_y / count]
+}
+
+/// Create bone-to-mesh weights.
+pub fn create_bone_weights(layers: &[Layer]) -> Vec<BoneWeight> {
+    let mut weights = Vec::new();
+
+    // Define bone-mesh mapping
+    let mapping: &[(&str, &[&str])] = &[
+        ("head", &["head", "face_base", "back_hair", "front_hair"]),
+        ("left_eye", &["left_eye"]),
+        ("right_eye", &["right_eye"]),
+        ("mouth", &["mouth"]),
+        ("torso", &["body"]),
+        ("left_arm", &["left_arm"]),
+        ("right_arm", &["right_arm"]),
+        ("left_leg", &["left_leg"]),
+        ("right_leg", &["right_leg"]),
+    ];
+
+    let layer_names: Vec<&str> = layers.iter().map(|l| l.name.as_str()).collect();
+
+    for (bone_id, mesh_names) in mapping {
+        for mesh_name in *mesh_names {
+            if layer_names.contains(mesh_name) {
+                weights.push(BoneWeight {
+                    mesh_name: mesh_name.to_string(),
+                    bone_id: bone_id.to_string(),
+                    weight: 1.0,
+                });
+            }
+        }
+    }
+
+    weights
 }
 
 fn filter_params(params: &[Parameter], includes: &str, excludes: Option<&str>) -> Vec<String> {

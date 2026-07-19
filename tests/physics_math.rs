@@ -1,5 +1,5 @@
 use mocari::core::{
-    PhysicsInputAccumulator, PhysicsParticle, PhysicsRange, Vector2, direction_to_radian,
+    PhysicsInputAccumulator, PhysicsParticle, PhysicsRange, Vec2, direction_to_radian,
     normalize_physics_parameter, parent_gravity_for_physics_output,
     physics_output_angle_with_parent_gravity, physics_output_translation_x,
     physics_output_translation_y, radian_to_direction, stabilize_physics_particles,
@@ -46,7 +46,7 @@ fn physics_input_accumulator_applies_weighted_channels() {
 
 #[test]
 fn physics_output_translation_reflects_axes() {
-    let translation = Vector2::new(3.0, -4.0);
+    let translation = Vec2::new(3.0, -4.0);
 
     assert_close(physics_output_translation_x(translation, false), 3.0);
     assert_close(physics_output_translation_x(translation, true), -3.0);
@@ -56,8 +56,8 @@ fn physics_output_translation_reflects_axes() {
 
 #[test]
 fn physics_output_angle_uses_direction_delta() {
-    let parent_gravity = Vector2::new(0.0, 1.0);
-    let translation = Vector2::new(1.0, 0.0);
+    let parent_gravity = Vec2::new(0.0, 1.0);
+    let translation = Vec2::new(1.0, 0.0);
 
     assert_close(
         direction_to_radian(parent_gravity, translation),
@@ -77,27 +77,27 @@ fn physics_output_angle_uses_direction_delta() {
 #[test]
 fn physics_output_parent_gravity_matches_particle_index_branch() {
     let particles = [
-        Vector2::new(1.0, 2.0),
-        Vector2::new(4.0, 6.0),
-        Vector2::new(10.0, 6.0),
+        Vec2::new(1.0, 2.0),
+        Vec2::new(4.0, 6.0),
+        Vec2::new(10.0, 6.0),
     ];
-    let parent_gravity = Vector2::new(0.0, -1.0);
+    let parent_gravity = Vec2::new(0.0, -1.0);
 
     assert_eq!(
         parent_gravity_for_physics_output(&particles, 0, parent_gravity),
-        Some(Vector2::new(0.0, 1.0))
+        Some(Vec2::new(0.0, 1.0))
     );
     assert_eq!(
         parent_gravity_for_physics_output(&particles, 1, parent_gravity),
-        Some(Vector2::new(0.0, 1.0))
+        Some(Vec2::new(0.0, 1.0))
     );
     assert_eq!(
         parent_gravity_for_physics_output(&particles, 2, parent_gravity),
-        Some(Vector2::new(3.0, 4.0))
+        Some(Vec2::new(3.0, 4.0))
     );
     assert_eq!(
         parent_gravity_for_physics_output(&particles, 3, parent_gravity),
-        Some(Vector2::new(6.0, 0.0))
+        Some(Vec2::new(6.0, 0.0))
     );
     assert_eq!(
         parent_gravity_for_physics_output(&particles, 4, parent_gravity),
@@ -109,22 +109,22 @@ fn physics_output_parent_gravity_matches_particle_index_branch() {
 fn physics_particles_update_positions_and_velocity() {
     let mut particles = [
         PhysicsParticle::new(
-            Vector2::new(0.0, 0.0),
-            Vector2::new(0.0, 0.0),
-            Vector2::new(0.0, 0.0),
-            Vector2::new(0.0, 0.0),
-            Vector2::new(0.0, 1.0),
+            Vec2::new(0.0, 0.0),
+            Vec2::new(0.0, 0.0),
+            Vec2::new(0.0, 0.0),
+            Vec2::new(0.0, 0.0),
+            Vec2::new(0.0, 1.0),
             1.0,
             1.0,
             0.0,
             0.0,
         ),
         PhysicsParticle::new(
-            Vector2::new(0.0, 1.0),
-            Vector2::new(0.0, 1.0),
-            Vector2::new(1.0, 0.0),
-            Vector2::new(0.0, 0.0),
-            Vector2::new(0.0, 1.0),
+            Vec2::new(0.0, 1.0),
+            Vec2::new(0.0, 1.0),
+            Vec2::new(1.0, 0.0),
+            Vec2::new(0.0, 0.0),
+            Vec2::new(0.0, 1.0),
             1.0,
             1.0,
             0.0,
@@ -134,19 +134,19 @@ fn physics_particles_update_positions_and_velocity() {
 
     update_physics_particles(
         &mut particles,
-        Vector2::new(0.0, 0.0),
+        Vec2::new(0.0, 0.0),
         0.0,
-        Vector2::new(0.0, 0.0),
+        Vec2::new(0.0, 0.0),
         0.001,
         1.0 / 30.0,
         5.0,
     );
 
-    assert_close(particles[1].position().x(), std::f32::consts::FRAC_1_SQRT_2);
-    assert_close(particles[1].position().y(), std::f32::consts::FRAC_1_SQRT_2);
-    assert_close(particles[1].velocity().x(), std::f32::consts::FRAC_1_SQRT_2);
+    assert_close(particles[1].position().x, std::f32::consts::FRAC_1_SQRT_2);
+    assert_close(particles[1].position().y, std::f32::consts::FRAC_1_SQRT_2);
+    assert_close(particles[1].velocity().x, std::f32::consts::FRAC_1_SQRT_2);
     assert_close(
-        particles[1].velocity().y(),
+        particles[1].velocity().y,
         std::f32::consts::FRAC_1_SQRT_2 - 1.0,
     );
 }
@@ -155,22 +155,22 @@ fn physics_particles_update_positions_and_velocity() {
 fn physics_particles_stabilize_along_force_direction() {
     let mut particles = [
         PhysicsParticle::new(
-            Vector2::new(0.0, 0.0),
-            Vector2::new(0.0, 0.0),
-            Vector2::new(3.0, 4.0),
-            Vector2::new(0.0, 0.0),
-            Vector2::new(0.0, 1.0),
+            Vec2::new(0.0, 0.0),
+            Vec2::new(0.0, 0.0),
+            Vec2::new(3.0, 4.0),
+            Vec2::new(0.0, 0.0),
+            Vec2::new(0.0, 1.0),
             1.0,
             1.0,
             0.0,
             0.0,
         ),
         PhysicsParticle::new(
-            Vector2::new(10.0, 10.0),
-            Vector2::new(10.0, 10.0),
-            Vector2::new(3.0, 4.0),
-            Vector2::new(0.0, 0.0),
-            Vector2::new(0.0, 1.0),
+            Vec2::new(10.0, 10.0),
+            Vec2::new(10.0, 10.0),
+            Vec2::new(3.0, 4.0),
+            Vec2::new(0.0, 0.0),
+            Vec2::new(0.0, 1.0),
             1.0,
             1.0,
             2.0,
@@ -180,13 +180,13 @@ fn physics_particles_stabilize_along_force_direction() {
 
     stabilize_physics_particles(
         &mut particles,
-        Vector2::new(2.0, 3.0),
+        Vec2::new(2.0, 3.0),
         0.0,
-        Vector2::new(0.0, 0.0),
+        Vec2::new(0.0, 0.0),
         0.001,
     );
 
-    assert_eq!(particles[0].position(), Vector2::new(2.0, 3.0));
-    assert_eq!(particles[1].position(), Vector2::new(2.0, 8.0));
-    assert_eq!(particles[1].velocity(), Vector2::new(0.0, 0.0));
+    assert_eq!(particles[0].position(), Vec2::new(2.0, 3.0));
+    assert_eq!(particles[1].position(), Vec2::new(2.0, 8.0));
+    assert_eq!(particles[1].velocity(), Vec2::new(0.0, 0.0));
 }

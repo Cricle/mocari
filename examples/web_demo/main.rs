@@ -3,6 +3,8 @@
 //! Build: `cargo build --target wasm32-unknown-unknown --features web --example web_demo --release`
 //! Deploy: `wasm-bindgen --target web --out-dir examples/web_demo/dist target/wasm32-unknown-unknown/release/examples/web_demo.wasm`
 
+#![cfg(target_arch = "wasm32")]
+
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -15,6 +17,8 @@ use mocari::engine::{Live2dEngine, ModelHandle};
 use wgpu::Color;
 
 const MODELS: &[&str] = &["Haru", "Hiyori", "Mao", "Mark", "Natori", "Ren", "Rice", "Wanko"];
+
+// Removed generate_and_load_model - using texture replacement instead
 
 struct State {
     engine: RefCell<Live2dEngine>,
@@ -137,6 +141,10 @@ async fn run(canvas: web_sys::HtmlCanvasElement) {
                 Some(el) => el,
                 None => return,
             };
+            // Skip if clicking the upload button
+            if target.closest("#upload-btn").ok().flatten().is_some() {
+                return;
+            }
             // Walk up to find the button with data-model
             let btn = target.closest("[data-model]").ok().flatten();
             let btn = match btn {
@@ -176,6 +184,88 @@ async fn run(canvas: web_sys::HtmlCanvasElement) {
         cb.forget();
     }
 
+    // Upload button
+    {
+        let st = state.clone();
+        let upload_btn = el("upload-btn");
+        let file_input: web_sys::HtmlInputElement = el("file-input").dyn_into().unwrap();
+        let upload_status = el("upload-status");
+
+        // Trigger file input when upload button is clicked
+        {
+            let fi = file_input.clone();
+            let cb = Closure::wrap(Box::new(move || {
+                fi.click();
+            }) as Box<dyn FnMut()>);
+            let _ = upload_btn.add_event_listener_with_callback("click", cb.as_ref().unchecked_ref());
+            cb.forget();
+        }
+
+        // Handle file selection - use uploaded image as texture for existing model
+        {
+            let fi = file_input.clone();
+            let cb = Closure::wrap(Box::new(move |_: web_sys::Event| {
+                let files = fi.files();
+                let Some(file_list) = files else { return };
+                let Some(file) = file_list.item(0) else { return };
+
+                let st = st.clone();
+                let status = upload_status.clone();
+                status.set_class_name("upload-status show");
+
+                let reader = web_sys::FileReader::new().unwrap();
+                let reader_clone = reader.clone();
+
+                let onload = Closure::wrap(Box::new(move |_: web_sys::Event| {
+                    let result = reader_clone.result().unwrap();
+                    let array: js_sys::Uint8Array = js_sys::Uint8Array::new(&result);
+                    let bytes = array.to_vec();
+
+                    let st = st.clone();
+                    let status = status.clone();
+                    wasm_bindgen_futures::spawn_local(async move {
+                        // Use uploaded image as texture, load with existing model (Haru)
+                        let data = fetch_model("Haru").await;
+
+                        // Replace first texture with uploaded image
+                        let mut textures = data.textures;
+                        if !textures.is_empty() {
+                            textures[0] = bytes;
+                        }
+
+                        let tex_refs: Vec<&[u8]> = textures.iter().map(|b| b.as_slice()).collect();
+                        let mut e = st.engine.borrow_mut();
+                        let old = st.handle.borrow().clone();
+                        let _ = e.unload_model(&old);
+
+                        match e.load_model_from_bytes(&data.json, &data.moc3, &tex_refs) {
+                            Ok(new_h) => {
+                                if let Some(ref motion) = data.motion {
+                                    let _ = e.play_motion_from_json(&new_h, motion);
+                                }
+                                *st.stats.borrow_mut() = model_stats(&e, &new_h);
+                                drop(e);
+                                *st.handle.borrow_mut() = new_h;
+                                web_sys::console::log_1(&"[mocari] Model loaded with custom texture".into());
+                            }
+                            Err(err) => {
+                                web_sys::console::error_1(&format!("[mocari] Failed to load model: {err}").into());
+                            }
+                        }
+                        status.set_class_name("upload-status");
+                    });
+                }) as Box<dyn FnMut(_)>);
+
+                reader.set_onload(Some(onload.as_ref().unchecked_ref()));
+                onload.forget();
+
+                let _ = reader.read_as_array_buffer(&file);
+            }) as Box<dyn FnMut(_)>);
+            let _ = file_input.add_event_listener_with_callback("change", cb.as_ref().unchecked_ref());
+            cb.forget();
+        }
+    }
+
     // Resize handler
     {
         let st = state.clone();
@@ -199,6 +289,7 @@ async fn run(canvas: web_sys::HtmlCanvasElement) {
     let stats_el = el("stats");
     let mut fps = FpsCounter::new();
     let perf = web_sys::window().unwrap().performance().unwrap();
+    #[allow(clippy::type_complexity)]
     let f: Rc<RefCell<Option<Closure<dyn FnMut()>>>> = Rc::new(RefCell::new(None));
     let g = f.clone();
     let st = state.clone();
@@ -223,7 +314,7 @@ async fn run(canvas: web_sys::HtmlCanvasElement) {
         let frame_ms = perf.now() - frame_start;
         fps.push(perf.now());
 
-        if fps.head % 30 == 0 {
+        if fps.head.is_multiple_of(30) {
             let ModelStats { drawables, vertices, triangles, parameters } = *st.stats.borrow();
             let mem = js_sys::Reflect::get(&js_sys::global(), &"performance".into())
                 .ok()

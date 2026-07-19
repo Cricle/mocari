@@ -63,6 +63,12 @@ pub struct ModelSession {
     next_id: u64,
 }
 
+impl Default for ModelSession {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ModelSession {
     /// Creates an empty session with no loaded models.
     pub fn new() -> Self {
