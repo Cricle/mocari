@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 mod export;
 mod face_detect;
 mod layer_gen;
@@ -48,11 +46,11 @@ fn main() -> Result<()> {
             model_name,
             motion_types,
         } => {
-            let types: Vec<String> = motion_types
+            let motion_list: Vec<String> = motion_types
                 .split(',')
                 .map(|s| s.trim().to_string())
                 .collect();
-            pipeline::run_pipeline(&image_path, &output_dir, &model_name, &types)?;
+            pipeline::run_pipeline(&image_path, &output_dir, &model_name, &motion_list)?;
         }
     }
     Ok(())

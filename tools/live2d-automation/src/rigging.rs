@@ -39,7 +39,7 @@ fn standard_parameters() -> Vec<Parameter> {
     ]
 }
 
-fn bone(id: &str, name: &str, parent: Option<&str>, x: f32, y: f32) -> Bone {
+fn make_bone(id: &str, name: &str, parent: Option<&str>, x: f32, y: f32) -> Bone {
     Bone {
         id: id.into(),
         name: name.into(),
@@ -50,126 +50,63 @@ fn bone(id: &str, name: &str, parent: Option<&str>, x: f32, y: f32) -> Bone {
 
 /// Set up rigging from layers: bones, parameters, deformers, bindings.
 pub fn setup_rigging(layers: &[Layer]) -> RiggingResult {
-    let mut bones = vec![bone("root", "Root", None, 0.0, 0.0)];
+    let mut bones = vec![make_bone("root", "Root", None, 0.0, 0.0)];
 
-    // Find head center from the "head" layer if present
     let head_center = layers
         .iter()
         .find(|l| l.name == "head")
-        .map(|l| {
-            [
-                l.bounds.x as f32 + l.bounds.width as f32 / 2.0,
-                l.bounds.y as f32 + l.bounds.height as f32 / 2.0,
-            ]
-        })
+        .map(|l| [l.bounds.x as f32 + l.bounds.width as f32 / 2.0, l.bounds.y as f32 + l.bounds.height as f32 / 2.0])
         .unwrap_or([0.0, -50.0]);
 
-    bones.push(bone("head", "Head", Some("root"), head_center[0], head_center[1]));
-    bones.push(bone("neck", "Neck", Some("head"), 0.0, -50.0));
+    bones.push(make_bone("head", "Head", Some("root"), head_center[0], head_center[1]));
+    bones.push(make_bone("neck", "Neck", Some("head"), 0.0, -50.0));
 
     let body_center = layers
         .iter()
         .find(|l| l.name == "body")
-        .map(|l| {
-            [
-                l.bounds.x as f32 + l.bounds.width as f32 / 2.0,
-                l.bounds.y as f32 + l.bounds.height as f32 / 2.0,
-            ]
-        })
+        .map(|l| [l.bounds.x as f32 + l.bounds.width as f32 / 2.0, l.bounds.y as f32 + l.bounds.height as f32 / 2.0])
         .unwrap_or([0.0, 50.0]);
 
-    bones.push(bone("torso", "Torso", Some("root"), body_center[0], body_center[1]));
-    bones.push(bone("left_arm", "Left Arm", Some("torso"), -80.0, -100.0));
-    bones.push(bone("left_forearm", "Left Forearm", Some("left_arm"), -60.0, 80.0));
-    bones.push(bone("right_arm", "Right Arm", Some("torso"), 80.0, -100.0));
-    bones.push(bone("right_forearm", "Right Forearm", Some("right_arm"), 60.0, 80.0));
-    bones.push(bone("left_leg", "Left Leg", Some("root"), -40.0, 150.0));
-    bones.push(bone("left_shin", "Left Shin", Some("left_leg"), 0.0, 100.0));
-    bones.push(bone("right_leg", "Right Leg", Some("root"), 40.0, 150.0));
-    bones.push(bone("right_shin", "Right Shin", Some("right_leg"), 0.0, 100.0));
-    bones.push(bone("left_eye", "Left Eye", Some("head"), -30.0, -20.0));
-    bones.push(bone("right_eye", "Right Eye", Some("head"), 30.0, -20.0));
-    bones.push(bone("mouth", "Mouth", Some("head"), 0.0, 20.0));
+    bones.push(make_bone("torso", "Torso", Some("root"), body_center[0], body_center[1]));
+    bones.push(make_bone("left_arm", "Left Arm", Some("torso"), -80.0, -100.0));
+    bones.push(make_bone("left_forearm", "Left Forearm", Some("left_arm"), -60.0, 80.0));
+    bones.push(make_bone("right_arm", "Right Arm", Some("torso"), 80.0, -100.0));
+    bones.push(make_bone("right_forearm", "Right Forearm", Some("right_arm"), 60.0, 80.0));
+    bones.push(make_bone("left_leg", "Left Leg", Some("root"), -40.0, 150.0));
+    bones.push(make_bone("left_shin", "Left Shin", Some("left_leg"), 0.0, 100.0));
+    bones.push(make_bone("right_leg", "Right Leg", Some("root"), 40.0, 150.0));
+    bones.push(make_bone("right_shin", "Right Shin", Some("right_leg"), 0.0, 100.0));
+    bones.push(make_bone("left_eye", "Left Eye", Some("head"), -30.0, -20.0));
+    bones.push(make_bone("right_eye", "Right Eye", Some("head"), 30.0, -20.0));
+    bones.push(make_bone("mouth", "Mouth", Some("head"), 0.0, 20.0));
 
     let parameters = standard_parameters();
 
-    // Bone-to-mesh weights
-    let bone_mesh_mapping: &[(&str, &[&str])] = &[
-        ("head", &["head", "face_base", "back_hair", "front_hair"]),
-        ("left_eye", &["left_eye"]),
-        ("right_eye", &["right_eye"]),
-        ("mouth", &["mouth"]),
-        ("torso", &["body"]),
-        ("left_arm", &["left_arm"]),
-        ("right_arm", &["right_arm"]),
-        ("left_leg", &["left_leg"]),
-        ("right_leg", &["right_leg"]),
-    ];
-
-    let layer_names: Vec<&str> = layers.iter().map(|l| l.name.as_str()).collect();
-    let mut bone_weights = Vec::new();
-    for (bone_id, mesh_names) in bone_mesh_mapping {
-        for mesh_name in *mesh_names {
-            if layer_names.contains(mesh_name) {
-                bone_weights.push((mesh_name.to_string(), bone_id.to_string(), 1.0));
-            }
-        }
-    }
-
-    // Hit areas
     let hit_areas = vec![
-        HitArea {
-            id: "HitHead".into(),
-            name: "Head".into(),
-            bounds: layers
-                .iter()
-                .find(|l| l.name == "head")
-                .map(|l| l.bounds.clone())
-                .unwrap_or(BoundingBox { x: -100, y: -200, width: 200, height: 200 }),
-        },
-        HitArea {
-            id: "HitBody".into(),
-            name: "Body".into(),
-            bounds: layers
-                .iter()
-                .find(|l| l.name == "body")
-                .map(|l| l.bounds.clone())
-                .unwrap_or(BoundingBox { x: -100, y: 0, width: 200, height: 300 }),
-        },
+        HitArea { id: "HitHead".into(), name: "Head".into() },
+        HitArea { id: "HitBody".into(), name: "Body".into() },
     ];
 
-    // Parameter groups
     let groups = vec![
-        ParameterGroup { name: "Head".into(), ids: param_ids_containing(&parameters, "Angle", Some("Body")) },
-        ParameterGroup { name: "Body".into(), ids: param_ids_containing(&parameters, "Body", None) },
-        ParameterGroup { name: "Eyes".into(), ids: param_ids_containing(&parameters, "Eye", None) },
-        ParameterGroup { name: "Brows".into(), ids: param_ids_containing(&parameters, "Brow", None) },
-        ParameterGroup { name: "Mouth".into(), ids: param_ids_containing(&parameters, "Mouth", None) },
-        ParameterGroup { name: "Arms".into(), ids: param_ids_containing(&parameters, "Arm", None) },
-        ParameterGroup { name: "Legs".into(), ids: param_ids_containing(&parameters, "Leg", None) },
-        ParameterGroup { name: "Hair".into(), ids: param_ids_containing(&parameters, "Hair", None) },
-        ParameterGroup { name: "Clothing".into(), ids: param_ids_containing(&parameters, "Cloth", None) },
-        ParameterGroup { name: "Accessories".into(), ids: param_ids_containing(&parameters, "Accessory", None) },
+        ParameterGroup { name: "Head".into(), ids: filter_params(&parameters, "Angle", Some("Body")) },
+        ParameterGroup { name: "Body".into(), ids: filter_params(&parameters, "Body", None) },
+        ParameterGroup { name: "Eyes".into(), ids: filter_params(&parameters, "Eye", None) },
+        ParameterGroup { name: "Brows".into(), ids: filter_params(&parameters, "Brow", None) },
+        ParameterGroup { name: "Mouth".into(), ids: filter_params(&parameters, "Mouth", None) },
+        ParameterGroup { name: "Arms".into(), ids: filter_params(&parameters, "Arm", None) },
+        ParameterGroup { name: "Legs".into(), ids: filter_params(&parameters, "Leg", None) },
+        ParameterGroup { name: "Hair".into(), ids: filter_params(&parameters, "Hair", None) },
+        ParameterGroup { name: "Clothing".into(), ids: filter_params(&parameters, "Cloth", None) },
+        ParameterGroup { name: "Accessories".into(), ids: filter_params(&parameters, "Accessory", None) },
     ];
 
-    RiggingResult {
-        bones,
-        parameters,
-        bone_weights,
-        hit_areas,
-        groups,
-    }
+    RiggingResult { bones, parameters, hit_areas, groups }
 }
 
-fn param_ids_containing(params: &[Parameter], includes: &str, excludes: Option<&str>) -> Vec<String> {
+fn filter_params(params: &[Parameter], includes: &str, excludes: Option<&str>) -> Vec<String> {
     params
         .iter()
-        .filter(|p| {
-            p.id.contains(includes)
-                && excludes
-                    .map(|ex| !p.id.contains(ex))
-                    .unwrap_or(true)
-        })
+        .filter(|p| p.id.contains(includes) && excludes.is_none_or(|ex| !p.id.contains(ex)))
         .map(|p| p.id.clone())
         .collect()
 }

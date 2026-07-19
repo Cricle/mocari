@@ -1,5 +1,4 @@
 use image::RgbaImage;
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
 pub struct BoundingBox {
@@ -18,7 +17,6 @@ pub struct DetectedPart {
 
 #[derive(Debug, Clone)]
 pub struct FaceDetection {
-    pub has_face: bool,
     pub face_bounds: BoundingBox,
     pub parts: Vec<DetectedPart>,
 }
@@ -29,10 +27,12 @@ pub struct Layer {
     pub image: RgbaImage,
     pub bounds: BoundingBox,
     pub z_order: i32,
+    #[expect(dead_code)]
     pub confidence: f32,
 }
 
 #[derive(Debug, Clone)]
+#[expect(dead_code)]
 pub struct Bone {
     pub id: String,
     pub name: String,
@@ -40,9 +40,10 @@ pub struct Bone {
     pub position: [f32; 2],
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Parameter {
     pub id: String,
+    #[expect(dead_code)]
     pub name: String,
     pub min: f32,
     pub max: f32,
@@ -54,31 +55,6 @@ pub struct ArtMesh {
     pub vertices: Vec<[f32; 2]>,
     pub uvs: Vec<[f32; 2]>,
     pub indices: Vec<u16>,
-}
-
-#[derive(Debug, Clone)]
-pub struct PhysicsParam {
-    pub id: String,
-    pub weight: f32,
-    pub param_type: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct Particle {
-    pub index: usize,
-    pub position: [f32; 2],
-    pub mass: f32,
-    pub damping: f32,
-    pub stiffness: f32,
-    pub fixed: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct PhysicsGroup {
-    pub name: String,
-    pub input: Vec<PhysicsParam>,
-    pub output: Vec<PhysicsParam>,
-    pub particles: Vec<Particle>,
 }
 
 #[derive(Debug, Clone)]
@@ -102,7 +78,6 @@ pub struct MotionCurve {
 pub struct RiggingResult {
     pub bones: Vec<Bone>,
     pub parameters: Vec<Parameter>,
-    pub bone_weights: Vec<(String, String, f32)>, // (mesh_name, bone_id, weight)
     pub hit_areas: Vec<HitArea>,
     pub groups: Vec<ParameterGroup>,
 }
@@ -111,7 +86,6 @@ pub struct RiggingResult {
 pub struct HitArea {
     pub id: String,
     pub name: String,
-    pub bounds: BoundingBox,
 }
 
 #[derive(Debug, Clone)]
