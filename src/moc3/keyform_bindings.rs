@@ -40,6 +40,42 @@ pub(super) struct Moc3KeyformSlot {
 }
 
 impl Moc3KeyformBindings {
+    /// Creates bindings from parameter ranges and minimal binding data.
+    ///
+    /// For models where each keyform has exactly 1 keyframe, the binding
+    /// structure is unused at runtime (keyform_slots returns a single slot
+    /// unconditionally), so minimal data is sufficient.
+    pub fn from_parts(
+        parameter_min_values: Vec<f32>,
+        parameter_max_values: Vec<f32>,
+        parameter_default_values: Vec<f32>,
+    ) -> Self {
+        let parameter_count = parameter_default_values.len();
+        // Minimal binding: one binding per parameter, one key per binding.
+        // Works because AI-rigged models use 1-keyform keyforms.
+        let binding_parameter_indices: Vec<usize> = (0..parameter_count).collect();
+        let keyform_binding_indices: Vec<i32> = (0..parameter_count as i32).collect();
+        let band_begin_indices: Vec<i32> = (0..parameter_count as i32).collect();
+        let band_counts: Vec<i32> = vec![1; parameter_count];
+        let keys_begin_indices: Vec<i32> = (0..parameter_count as i32).collect();
+        let keys_counts: Vec<i32> = vec![1; parameter_count];
+        // One key value per binding, using the default value.
+        let key_values = parameter_default_values.clone();
+
+        Self {
+            parameter_min_values,
+            parameter_max_values,
+            parameter_default_values,
+            binding_parameter_indices,
+            keyform_binding_indices,
+            band_begin_indices,
+            band_counts,
+            keys_begin_indices,
+            keys_counts,
+            key_values,
+        }
+    }
+
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let header = Moc3Header::parse(bytes)?;
         let offsets = Moc3SectionOffsets::parse(bytes)?;

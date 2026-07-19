@@ -98,6 +98,39 @@ pub struct Moc3Deformers {
 }
 
 impl Moc3Deformers {
+    /// Creates an empty deformer set (no deformers).
+    pub fn empty() -> Self {
+        Self {
+            parent_deformer_indices: Vec::new(),
+            deformer_kinds: Vec::new(),
+            specific_indices: Vec::new(),
+            warp_keyform_binding_band_indices: Vec::new(),
+            warp_keyform_begin_indices: Vec::new(),
+            warp_keyform_counts: Vec::new(),
+            warp_vertex_counts: Vec::new(),
+            warp_rows: Vec::new(),
+            warp_cols: Vec::new(),
+            warp_keyform_opacities: Vec::new(),
+            rotation_keyform_binding_band_indices: Vec::new(),
+            rotation_keyform_begin_indices: Vec::new(),
+            rotation_keyform_counts: Vec::new(),
+            rotation_base_angles: Vec::new(),
+            warp_keyform_position_begin_indices: Vec::new(),
+            rotation_keyform_angles: Vec::new(),
+            rotation_keyform_origin_xs: Vec::new(),
+            rotation_keyform_origin_ys: Vec::new(),
+            rotation_keyform_scales: Vec::new(),
+            rotation_keyform_reflect_xs: Vec::new(),
+            rotation_keyform_reflect_ys: Vec::new(),
+            rotation_keyform_opacities: Vec::new(),
+            keyform_position_xys: Vec::new(),
+            warp_keyform_color_begin_indices: Vec::new(),
+            rotation_keyform_color_begin_indices: Vec::new(),
+            keyform_multiply_colors: [Vec::new(), Vec::new(), Vec::new()],
+            keyform_screen_colors: [Vec::new(), Vec::new(), Vec::new()],
+        }
+    }
+
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let header = Moc3Header::parse(bytes)?;
         let offsets = Moc3SectionOffsets::parse(bytes)?;

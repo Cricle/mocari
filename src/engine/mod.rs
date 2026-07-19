@@ -16,6 +16,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use winit::window::Window;
+#[cfg(target_arch = "wasm32")]
+use web_sys;
 
 use crate::assets::load_model_runtime;
 use crate::auto::{Breath, BreathConfig, EyeBlink, EyeBlinkConfig, LipSync, LipSyncConfig, MouseTracker, MouseTrackerConfig};
@@ -80,6 +82,9 @@ pub struct Live2dEngine {
     clear_color: Option<wgpu::Color>,
     last_delta: f32,
     needs_redraw: bool,
+    msaa_view: wgpu::TextureView,
+    #[cfg(feature = "ai")]
+    drivers: Vec<Box<dyn crate::ai::AiDriver>>,
 }
 
 impl Live2dEngine {
@@ -89,7 +94,14 @@ impl Live2dEngine {
     /// and configures the surface for rendering.
     pub async fn new(window: Arc<Window>) -> Result<Self, EngineError> {
         let ctx = WgpuContext::new(window).await?;
-        let renderer = WgpuLive2dRenderer::new(ctx.device(), ctx.config().format);
+        let renderer = WgpuLive2dRenderer::new(ctx.device(), ctx.config().format, 4);
+        let config = ctx.config();
+        let msaa_view = renderer.create_msaa_render_target(
+            ctx.device(),
+            config.format,
+            config.width.max(1),
+            config.height.max(1),
+        );
 
         Ok(Self {
             ctx,
@@ -101,7 +113,90 @@ impl Live2dEngine {
             clear_color: None,
             last_delta: 0.0,
             needs_redraw: false,
+            msaa_view,
+            #[cfg(feature = "ai")]
+            drivers: Vec::new(),
         })
+    }
+
+    /// Creates a new engine from pre-existing wgpu objects (no winit window needed).
+    pub fn from_wgpu(
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+        surface: wgpu::Surface<'static>,
+        config: wgpu::SurfaceConfiguration,
+    ) -> Self {
+        let renderer = WgpuLive2dRenderer::new(&device, config.format, 4);
+        let msaa_view = renderer.create_msaa_render_target(
+            &device,
+            config.format,
+            config.width.max(1),
+            config.height.max(1),
+        );
+        let ctx = WgpuContext::from_wgpu(device, queue, surface, config);
+
+        Self {
+            ctx,
+            renderer,
+            models: Vec::new(),
+            plugins: Vec::new(),
+            frame_callbacks: Vec::new(),
+            render_callbacks: Vec::new(),
+            clear_color: None,
+            last_delta: 0.0,
+            needs_redraw: false,
+            msaa_view,
+            #[cfg(feature = "ai")]
+            drivers: Vec::new(),
+        }
+    }
+
+    /// Creates an engine directly from an HTML canvas element (web only).
+    ///
+    /// Handles all wgpu initialization internally: instance, surface, adapter,
+    /// device, queue, and surface configuration.
+    #[cfg(target_arch = "wasm32")]
+    pub async fn from_canvas(canvas: web_sys::HtmlCanvasElement) -> Result<Self, EngineError> {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+        let surface = instance
+            .create_surface(wgpu::SurfaceTarget::Canvas(canvas.clone()))
+            .map_err(|e| EngineError::Surface(e.to_string()))?;
+
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                force_fallback_adapter: false,
+                compatible_surface: Some(&surface),
+                apply_limit_buckets: false,
+            })
+            .await
+            .map_err(|_| EngineError::NoAdapter)?;
+
+        let limits = wgpu::Limits::downlevel_webgl2_defaults();
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("mocari.device"),
+                required_features: wgpu::Features::empty(),
+                required_limits: limits,
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| EngineError::Device(e.to_string()))?;
+
+        let size = (canvas.width(), canvas.height());
+        let mut config = surface
+            .get_default_config(&adapter, size.0.max(1), size.1.max(1))
+            .ok_or_else(|| EngineError::Surface("surface not supported".into()))?;
+        let capabilities = surface.get_capabilities(&adapter);
+        config.format = capabilities.formats[0];
+        config.present_mode = [wgpu::PresentMode::Fifo, wgpu::PresentMode::Mailbox]
+            .into_iter()
+            .find(|mode| capabilities.present_modes.contains(mode))
+            .unwrap_or(wgpu::PresentMode::AutoNoVsync);
+        config.desired_maximum_frame_latency = 3;
+        surface.configure(&device, &config);
+
+        Ok(Self::from_wgpu(device, queue, surface, config))
     }
 
     /// Returns a reference to the wgpu device.
@@ -283,6 +378,7 @@ impl Live2dEngine {
             &mut self.render_callbacks,
             &mut self.plugins,
             self.clear_color,
+            &self.msaa_view,
         )?;
         self.needs_redraw = false;
         Ok(())
@@ -293,6 +389,12 @@ impl Live2dEngine {
     pub fn resize(&mut self, size: winit::dpi::PhysicalSize<u32>) {
         self.ctx.resize(size);
         let config = self.ctx.config();
+        self.msaa_view = self.renderer.create_msaa_render_target(
+            self.ctx.device(),
+            config.format,
+            config.width.max(1),
+            config.height.max(1),
+        );
         for m in &mut self.models {
             m.transform.update_matrix(
                 self.ctx.queue(),
@@ -324,6 +426,15 @@ impl Live2dEngine {
             }
         }
 
+        // Run AI drivers after model tick (parameters are already reset and
+        // animations applied; drivers can still inject overrides for next frame).
+        #[cfg(feature = "ai")]
+        for driver in &mut self.drivers {
+            for model in &mut self.models {
+                driver.update(delta, &mut model.runtime);
+            }
+        }
+
         // Frame callbacks
         let mut ctx = FrameContext {
             delta,
@@ -343,6 +454,22 @@ impl Live2dEngine {
     /// Registers a callback that runs each frame after model updates.
     pub fn on_frame(&mut self, callback: impl FnMut(&mut FrameContext) + 'static) {
         self.frame_callbacks.push(Box::new(callback));
+    }
+
+    /// Registers an AI driver that runs each frame for all loaded models.
+    ///
+    /// Drivers run in registration order, after model tick (motion, expressions,
+    /// auto-systems) and before rendering. Each driver receives the mutable
+    /// runtime so it can set parameters or override drawables.
+    #[cfg(feature = "ai")]
+    pub fn add_driver(&mut self, driver: impl crate::ai::AiDriver + 'static) {
+        self.drivers.push(Box::new(driver));
+    }
+
+    /// Removes all AI drivers from the engine.
+    #[cfg(feature = "ai")]
+    pub fn clear_drivers(&mut self) {
+        self.drivers.clear();
     }
 
     /// Returns true if any model is actively animating and needs continuous redraws.
@@ -452,6 +579,125 @@ impl Live2dEngine {
         let transform = self.renderer.create_transform(
             self.ctx.device(),
             &fit_model_matrix(bounds, config.width, config.height, 1.0),
+        );
+
+        let has_eye_params = runtime.parameter_ids().iter().any(|id| {
+            matches!(id.as_str(), "ParamEyeLOpen" | "ParamEyeROpen" | "ParamEyeOpen")
+        });
+        let eye_blink = if has_eye_params {
+            Some(EyeBlink::with_defaults())
+        } else {
+            None
+        };
+        let breath = Some(Breath::with_defaults());
+
+        let lip_sync_config = runtime.lip_sync_config_from_model();
+        let lip_sync = if !lip_sync_config.parameter_indices.is_empty() || runtime.parameter_ids().iter().any(|id| id == "ParamMouthOpenY") {
+            Some(LipSync::new(lip_sync_config))
+        } else {
+            None
+        };
+
+        let has_tracking_params = runtime.parameter_ids().iter().any(|id| {
+            matches!(id.as_str(), "ParamAngleX" | "ParamAngleY" | "ParamEyeBallX" | "ParamEyeBallY")
+        });
+        let mouse_tracker = if has_tracking_params {
+            Some(MouseTracker::with_defaults())
+        } else {
+            None
+        };
+
+        let animation = AnimationState {
+            motion_player: None,
+            expression_manager: ExpressionManager::new(),
+            eye_blink,
+            breath,
+            lip_sync,
+            mouse_tracker,
+        };
+
+        let mesh = MeshState {
+            mesh_buffers,
+            textures,
+            clipping_resources,
+            mask_target,
+        };
+
+        let id = format!("model_{}", self.models.len());
+        let handle = ModelHandle {
+            index: self.models.len(),
+            id: id.clone(),
+        };
+
+        self.models.push(LoadedModel {
+            id,
+            path: std::path::PathBuf::new(),
+            runtime,
+            motions: std::collections::BTreeMap::new(),
+            expressions: Vec::new(),
+            animation,
+            mesh,
+            transform,
+            bounds,
+            scale: 1.0,
+            dirty: true,
+        });
+
+        self.needs_redraw = true;
+        Ok(handle)
+    }
+
+    /// Loads an AI-rigged model directly into the engine.
+    ///
+    /// Converts the rigged model data into a runtime, decodes textures from
+    /// PNG bytes, and sets up GPU resources. Returns a handle for controlling
+    /// the model.
+    #[cfg(feature = "ai")]
+    pub fn load_rigged_model(
+        &mut self,
+        rigged: crate::ai::RiggedModel,
+        model_json_config: Option<&crate::ai::ModelJsonConfig>,
+    ) -> Result<ModelHandle, EngineError> {
+        let config = model_json_config.cloned().unwrap_or_default();
+        let json_str = crate::ai::generate_model_json(&rigged, &config);
+        let model3 = crate::json::Model3::from_json_str(&json_str)
+            .map_err(|e| EngineError::ModelLoad(e.to_string()))?;
+
+        let texture_pngs: Vec<Vec<u8>> = rigged.textures.clone();
+        let runtime = rigged
+            .into_runtime(model3)
+            .ok_or_else(|| EngineError::ModelLoad("failed to build runtime from rigged model".into()))?;
+
+        let bounds = ModelBounds::from_drawables(runtime.meshes())
+            .ok_or_else(|| EngineError::ModelLoad("model has no drawable bounds".into()))?;
+
+        // Decode textures from PNG bytes.
+        let mut textures = Vec::with_capacity(texture_pngs.len());
+        for png_bytes in &texture_pngs {
+            let img = image::load_from_memory(png_bytes)
+                .map_err(|e| EngineError::ModelLoad(e.to_string()))?;
+            let rgba = img.to_rgba8();
+            textures.push(
+                self.renderer
+                    .create_rgba8_texture(self.ctx.device(), self.ctx.queue(), rgba.width(), rgba.height(), rgba.as_raw())
+                    .map_err(|e| EngineError::ModelLoad(e.to_string()))?,
+            );
+        }
+
+        let mesh_buffers = WgpuMeshBuffers::from_drawables(self.ctx.device(), runtime.meshes())
+            .ok_or_else(|| EngineError::ModelLoad("failed to create mesh buffers".into()))?;
+
+        let mut clipping_plan = WgpuClippingPlan::from_mesh_buffers(&mesh_buffers);
+        clipping_plan.prepare_single_texture_masks(&mesh_buffers)?;
+        let clipping_resources = self.renderer.create_clipping_resources(self.ctx.device(), &clipping_plan)?;
+
+        let mask_target = self.renderer.create_mask_render_target(self.ctx.device(), MASK_TEXTURE_SIZE)
+            .map_err(|e| EngineError::ModelLoad(e.to_string()))?;
+
+        let config_w = self.ctx.config();
+        let transform = self.renderer.create_transform(
+            self.ctx.device(),
+            &fit_model_matrix(bounds, config_w.width, config_w.height, 1.0),
         );
 
         let has_eye_params = runtime.parameter_ids().iter().any(|id| {
@@ -667,8 +913,8 @@ impl Live2dEngine {
         self.plugins.push(plugin);
     }
 
-    /// Returns a reference to the underlying window.
-    pub fn window(&self) -> &Arc<Window> {
+    /// Returns a reference to the underlying window, if available.
+    pub fn window(&self) -> Option<&Arc<Window>> {
         self.ctx.window()
     }
 
@@ -678,6 +924,7 @@ impl Live2dEngine {
     pub fn set_click_through(&self, enabled: bool) -> Result<(), EngineError> {
         self.ctx
             .window()
+            .ok_or_else(|| EngineError::Surface("no window available".into()))?
             .set_cursor_hittest(!enabled)
             .map_err(|e| EngineError::Surface(e.to_string()))
     }
@@ -761,7 +1008,7 @@ pub fn run_with_config(model_path: &str, config: RunConfig) -> Result<(), Engine
         .map_err(|e| EngineError::Surface(e.to_string()))?;
     event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
 
-    let mut app = App {
+    let app = App {
         model_path,
         config,
         state: None,
@@ -776,6 +1023,7 @@ pub fn run_with_config(model_path: &str, config: RunConfig) -> Result<(), Engine
 
     #[cfg(not(target_arch = "wasm32"))]
     {
+        let mut app = app;
         event_loop
             .run_app(&mut app)
             .map_err(|e| EngineError::Surface(e.to_string()))
@@ -820,6 +1068,7 @@ pub fn run_desktop_pet_with_config(
 }
 
 struct App {
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     model_path: String,
     config: RunConfig,
     state: Option<AppState>,
@@ -854,6 +1103,8 @@ impl winit::application::ApplicationHandler for App {
         {
             self.init_engine(event_loop, window);
         }
+        #[cfg(target_arch = "wasm32")]
+        let _ = window;
     }
 
     fn window_event(
@@ -928,6 +1179,7 @@ impl App {
 }
 
 struct DesktopPetApp {
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     model_path: String,
     config: DesktopPetConfig,
     state: Option<DesktopPetState>,
@@ -955,6 +1207,8 @@ impl winit::application::ApplicationHandler for DesktopPetApp {
             }
         };
 
+        #[cfg(target_arch = "wasm32")]
+        let _ = window;
         #[cfg(not(target_arch = "wasm32"))]
         match pollster::block_on(Live2dEngine::new(window.clone())) {
             Ok(mut engine) => {

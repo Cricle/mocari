@@ -20,8 +20,8 @@ pub struct Moc3OffscreenInfo {
 }
 
 impl Moc3OffscreenInfo {
-    #[cfg(test)]
-    pub(crate) fn from_parts(
+    /// Creates offscreen info from component vectors.
+    pub fn from_parts(
         part_parent_indices: Vec<i32>,
         drawable_parent_part_indices: Vec<i32>,
         part_offscreen_indices: Vec<i32>,

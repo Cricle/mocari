@@ -20,6 +20,24 @@ pub struct Moc3CanvasInfo {
 }
 
 impl Moc3CanvasInfo {
+    /// Creates canvas info from component values.
+    pub fn from_parts(
+        pixels_per_unit: f32,
+        origin_x: f32,
+        origin_y: f32,
+        width: f32,
+        height: f32,
+    ) -> Self {
+        Self {
+            pixels_per_unit,
+            origin_x,
+            origin_y,
+            width,
+            height,
+            flags: 0,
+        }
+    }
+
     /// Parses canvas information from a full `.moc3` byte slice.
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let header = Moc3Header::parse(bytes)?;

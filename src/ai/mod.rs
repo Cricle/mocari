@@ -6,10 +6,12 @@
 
 mod driver;
 mod error;
+mod model_json;
 mod rigger;
 
 pub use driver::AiDriver;
 pub use error::RigError;
+pub use model_json::{ModelJsonConfig, generate_model_json};
 pub use rigger::{
     AiRigger, DeformerChild, DeformerType, InterpolationType, ParameterKeyframe,
     RiggedDeformer, RiggedMesh, RiggedModel, RiggedParameter,

@@ -23,8 +23,8 @@ pub struct Moc3Parts {
 }
 
 impl Moc3Parts {
-    #[cfg(test)]
-    pub(crate) fn from_parts(
+    /// Creates parts from component vectors.
+    pub fn from_parts(
         parent_part_indices: Vec<i32>,
         keyform_binding_band_indices: Vec<i32>,
         keyform_begin_indices: Vec<i32>,

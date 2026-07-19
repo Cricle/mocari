@@ -15,6 +15,19 @@ pub struct Moc3Ids {
 }
 
 impl Moc3Ids {
+    /// Creates an ID table from pre-built string lists.
+    pub fn from_parts(
+        parts: Vec<String>,
+        art_meshes: Vec<String>,
+        parameters: Vec<String>,
+    ) -> Self {
+        Self {
+            parts,
+            art_meshes,
+            parameters,
+        }
+    }
+
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let offsets = Moc3SectionOffsets::parse(bytes)?;
         let counts = Moc3CountInfo::parse(bytes)?;
