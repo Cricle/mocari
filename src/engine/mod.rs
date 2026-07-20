@@ -1092,10 +1092,33 @@ impl Live2dApp {
                         Ok(handle) => {
                             // Enable all auto-animations for desktop pet
                             if self.is_desktop_pet() {
+                                eprintln!("[DEBUG] Model loaded, configuring auto-animations...");
+
+                                // Check if model has eye parameters
+                                if let Some(model) = engine.models.get(handle.index) {
+                                    let param_ids = model.runtime.parameter_ids();
+                                    eprintln!("[DEBUG] Model has {} parameters", param_ids.len());
+                                    for (i, id) in param_ids.iter().enumerate() {
+                                        if id.contains("Eye") || id.contains("Mouth") || id.contains("Body") {
+                                            eprintln!("[DEBUG] Parameter[{}]: {}", i, id);
+                                        }
+                                    }
+                                }
+
                                 engine.configure_eye_blink(&handle, Some(Default::default()));
                                 engine.configure_breath(&handle, Some(Default::default()));
                                 engine.configure_lip_sync(&handle, Some(Default::default()));
                                 engine.configure_mouse_tracker(&handle, Some(Default::default()));
+
+                                eprintln!("[DEBUG] Auto-animations configured");
+
+                                // Verify animations are set
+                                if let Some(model) = engine.models.get(handle.index) {
+                                    eprintln!("[DEBUG] eye_blink: {:?}", model.animation.eye_blink.is_some());
+                                    eprintln!("[DEBUG] breath: {:?}", model.animation.breath.is_some());
+                                    eprintln!("[DEBUG] lip_sync: {:?}", model.animation.lip_sync.is_some());
+                                    eprintln!("[DEBUG] mouse_tracker: {:?}", model.animation.mouse_tracker.is_some());
+                                }
                             }
                         }
                         Err(e) => {
