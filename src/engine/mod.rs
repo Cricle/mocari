@@ -335,6 +335,16 @@ impl Live2dEngine {
                     model.animation.eye_blink.is_some(),
                     model.animation.breath.is_some()
                 );
+
+                // Check actual parameter values
+                if let Some(idx) = model.runtime.parameter_index("ParamEyeLOpen") {
+                    let val = model.runtime.parameter_value_by_index(idx).unwrap_or(0.0);
+                    eprintln!("[DEBUG]   ParamEyeLOpen = {:.3}", val);
+                }
+                if let Some(idx) = model.runtime.parameter_index("ParamBodyAngleY") {
+                    let val = model.runtime.parameter_value_by_index(idx).unwrap_or(0.0);
+                    eprintln!("[DEBUG]   ParamBodyAngleY = {:.3}", val);
+                }
             }
         }
 
