@@ -906,7 +906,8 @@ pub fn run_desktop_pet_with_config(
 
     let event_loop = winit::event_loop::EventLoop::new()
         .map_err(|e| EngineError::Surface(e.to_string()))?;
-    event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+    // Don't set Wait mode - we need continuous updates for animations
+    // event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
 
     let mut app = Live2dApp::new_desktop_pet(model_path, config);
 
