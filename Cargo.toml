@@ -69,7 +69,7 @@ path = "src/bin/mocari-mcp.rs"
 required-features = ["mcp"]
 
 [[example]]
-name = "show_model"
+name = "simple"
 required-features = ["wgpu"]
 
 [[example]]
@@ -78,6 +78,10 @@ required-features = ["wgpu"]
 
 [[example]]
 name = "desktop_pet"
+required-features = ["wgpu"]
+
+[[example]]
+name = "memory_benchmark"
 required-features = ["wgpu"]
 
 [[example]]

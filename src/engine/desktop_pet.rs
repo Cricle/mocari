@@ -25,7 +25,7 @@ impl Default for DesktopPetConfig {
             transparent: true,
             decorations: false,
             always_on_top: true,
-            click_through: true,
+            click_through: false,  // Changed: allow mouse interaction by default
             size: (400, 400),
             title: "Live2D Pet".into(),
             clear_color: Some(wgpu::Color::TRANSPARENT),
@@ -127,7 +127,7 @@ mod tests {
         assert!(cfg.transparent);
         assert!(!cfg.decorations);
         assert!(cfg.always_on_top);
-        assert!(cfg.click_through);
+        assert!(!cfg.click_through);  // Updated: default is now false
         assert_eq!(cfg.size, (400, 400));
         assert_eq!(cfg.title, "Live2D Pet");
         assert_eq!(cfg.clear_color, Some(wgpu::Color::TRANSPARENT));

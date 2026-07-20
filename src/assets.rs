@@ -203,6 +203,16 @@ impl RuntimeModel {
         &self.textures
     }
 
+    /// Clears CPU-side texture data to free memory after GPU upload.
+    ///
+    /// After calling this, `textures()` will return an empty slice.
+    /// This is useful when textures have been uploaded to GPU and the
+    /// CPU-side copies are no longer needed.
+    pub fn clear_textures(&mut self) {
+        self.textures.clear();
+        self.textures.shrink_to_fit();
+    }
+
     /// Returns the directory that contained the loaded `.model3.json` file.
     pub fn model_dir(&self) -> Option<&Path> {
         self.model_dir.as_deref()

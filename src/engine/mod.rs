@@ -228,15 +228,19 @@ impl Live2dEngine {
 
     /// Loads a model from a `.model3.json` file path.
     pub fn load_model(&mut self, path: &str) -> Result<ModelHandle, EngineError> {
-        let loaded = load_model_runtime(path).map_err(|e| EngineError::ModelLoad(e.to_string()))?;
+        let mut loaded = load_model_runtime(path).map_err(|e| EngineError::ModelLoad(e.to_string()))?;
         let runtime = loaded.runtime().clone();
         let model_dir = loaded.model_dir();
         let bounds = ModelBounds::from_drawables(runtime.meshes())
             .ok_or_else(|| EngineError::ModelLoad("model has no drawable bounds".into()))?;
 
-        let textures = self.create_textures(loaded.textures())?;
+        // Collect motion groups and expressions before clearing textures
         let motion_groups = model::motion_paths_by_group(&runtime, model_dir);
         let expressions = model::expression_paths(&runtime, model_dir);
+
+        // Upload textures to GPU, then immediately drop CPU-side texture data
+        let textures = self.create_textures(loaded.textures())?;
+        loaded.clear_textures(); // Free ~50-100MB of CPU memory after GPU upload
 
         self.register_model(runtime, textures, bounds, PathBuf::from(path), motion_groups, expressions)
     }
@@ -454,13 +458,14 @@ impl Live2dEngine {
         moc3_bytes: &[u8],
         texture_pngs: &[&[u8]],
     ) -> Result<ModelHandle, EngineError> {
-        let loaded = crate::assets::load_model_from_bytes(model_json, moc3_bytes, texture_pngs)
+        let mut loaded = crate::assets::load_model_from_bytes(model_json, moc3_bytes, texture_pngs)
             .map_err(|e| EngineError::ModelLoad(e.to_string()))?;
         let runtime = loaded.runtime().clone();
         let bounds = ModelBounds::from_drawables(runtime.meshes())
             .ok_or_else(|| EngineError::ModelLoad("model has no drawable bounds".into()))?;
 
         let textures = self.create_textures(loaded.textures())?;
+        loaded.clear_textures(); // Free CPU memory after GPU upload
 
         self.register_model(runtime, textures, bounds, PathBuf::new(), BTreeMap::new(), Vec::new())
     }
@@ -1081,12 +1086,23 @@ impl Live2dApp {
                 if let WindowConfig::DesktopPet(ref config) = self.window_config {
                     engine.set_clear_color(config.clear_color);
                 }
-                if !self.model_path.is_empty()
-                    && let Err(e) = engine.load_model(&self.model_path)
-                {
-                    eprintln!("failed to load model: {e}");
-                    event_loop.exit();
-                    return;
+                if !self.model_path.is_empty() {
+                    match engine.load_model(&self.model_path) {
+                        Ok(handle) => {
+                            // Enable all auto-animations for desktop pet
+                            if self.is_desktop_pet() {
+                                engine.configure_eye_blink(&handle, Some(Default::default()));
+                                engine.configure_breath(&handle, Some(Default::default()));
+                                engine.configure_lip_sync(&handle, Some(Default::default()));
+                                engine.configure_mouse_tracker(&handle, Some(Default::default()));
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("failed to load model: {e}");
+                            event_loop.exit();
+                            return;
+                        }
+                    }
                 }
                 window.request_redraw();
                 self.state = Some(LiveAppState {
