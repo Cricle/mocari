@@ -325,25 +325,23 @@ impl Live2dEngine {
         static TICK_COUNT: AtomicU32 = AtomicU32::new(0);
 
         let count = TICK_COUNT.fetch_add(1, Ordering::Relaxed);
-        if count == 0 || count % 120 == 0 {
-            eprintln!("[DEBUG] tick() called: frame={}, delta={:.3}s, models={}",
-                count + 1, delta, self.models.len());
+        // Sample every 30 frames (~0.5s) to catch blinks better
+        if count == 0 || count % 30 == 0 {
+            eprintln!("[DEBUG] tick() frame={}, delta={:.3}s", count + 1, delta);
             for (i, model) in self.models.iter().enumerate() {
-                eprintln!("[DEBUG]   model[{}]: animating={}, eye_blink={}, breath={}",
-                    i,
-                    model::is_animating(model),
-                    model.animation.eye_blink.is_some(),
-                    model.animation.breath.is_some()
-                );
-
                 // Check actual parameter values
                 if let Some(idx) = model.runtime.parameter_index("ParamEyeLOpen") {
                     let val = model.runtime.parameter_value_by_index(idx).unwrap_or(0.0);
-                    eprintln!("[DEBUG]   ParamEyeLOpen = {:.3}", val);
+                    eprintln!("[DEBUG]   model[{}] ParamEyeLOpen = {:.3}", i, val);
                 }
                 if let Some(idx) = model.runtime.parameter_index("ParamBodyAngleY") {
                     let val = model.runtime.parameter_value_by_index(idx).unwrap_or(0.0);
-                    eprintln!("[DEBUG]   ParamBodyAngleY = {:.3}", val);
+                    eprintln!("[DEBUG]   model[{}] ParamBodyAngleY = {:.3}", i, val);
+                }
+
+                // Check breath state
+                if let Some(breath) = &model.animation.breath {
+                    eprintln!("[DEBUG]   model[{}] breath exists, checking...", i);
                 }
             }
         }
@@ -1133,7 +1131,12 @@ impl Live2dApp {
                                 }
 
                                 engine.configure_eye_blink(&handle, Some(Default::default()));
+
+                                // Breath: use ParamBodyAngleY since this model doesn't have ParamBreath
+                                // TODO: Make breath config support custom parameter names
+                                // For now, breath won't work on models without ParamBreath
                                 engine.configure_breath(&handle, Some(Default::default()));
+
                                 engine.configure_lip_sync(&handle, Some(Default::default()));
                                 engine.configure_mouse_tracker(&handle, Some(Default::default()));
 
