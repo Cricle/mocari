@@ -57,7 +57,7 @@ impl Moc3Ids {
         &self.art_meshes
     }
 
-    pub fn parameters(&self) -> &[String] {
+    pub(crate) fn parameters(&self) -> &[String] {
         &self.parameters
     }
 }

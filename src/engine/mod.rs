@@ -1130,7 +1130,17 @@ impl Live2dApp {
                                     }
                                 }
 
-                                engine.configure_eye_blink(&handle, Some(Default::default()));
+                                // Configure slower, more visible eye blink for desktop pet
+                                use crate::auto::EyeBlinkConfig;
+                                let blink_config = EyeBlinkConfig {
+                                    min_interval: 2.0,
+                                    max_interval: 5.0,
+                                    close_duration: 0.3,  // Slower (was 0.1s)
+                                    open_duration: 0.4,   // Slower (was 0.15s)
+                                    weight: 1.0,
+                                    parameter_indices: Vec::new(),
+                                };
+                                engine.configure_eye_blink(&handle, Some(blink_config));
 
                                 // Breath: use ParamBodyAngleY since this model doesn't have ParamBreath
                                 // TODO: Make breath config support custom parameter names
