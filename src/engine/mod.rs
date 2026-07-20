@@ -321,31 +321,6 @@ impl Live2dEngine {
     /// Advances all models' animation state by `delta` seconds.
     /// Call this once per frame before `render()`.
     pub fn tick(&mut self, delta: f32) {
-        use std::sync::atomic::{AtomicU32, Ordering};
-        static TICK_COUNT: AtomicU32 = AtomicU32::new(0);
-
-        let count = TICK_COUNT.fetch_add(1, Ordering::Relaxed);
-        // Sample every 30 frames (~0.5s) to catch blinks better
-        if count == 0 || count % 30 == 0 {
-            eprintln!("[DEBUG] tick() frame={}, delta={:.3}s", count + 1, delta);
-            for (i, model) in self.models.iter().enumerate() {
-                // Check actual parameter values
-                if let Some(idx) = model.runtime.parameter_index("ParamEyeLOpen") {
-                    let val = model.runtime.parameter_value_by_index(idx).unwrap_or(0.0);
-                    eprintln!("[DEBUG]   model[{}] ParamEyeLOpen = {:.3}", i, val);
-                }
-                if let Some(idx) = model.runtime.parameter_index("ParamBodyAngleY") {
-                    let val = model.runtime.parameter_value_by_index(idx).unwrap_or(0.0);
-                    eprintln!("[DEBUG]   model[{}] ParamBodyAngleY = {:.3}", i, val);
-                }
-
-                // Check breath state
-                if let Some(breath) = &model.animation.breath {
-                    eprintln!("[DEBUG]   model[{}] breath exists, checking...", i);
-                }
-            }
-        }
-
         self.last_delta = delta;
 
         for model in &mut self.models {
@@ -1117,19 +1092,6 @@ impl Live2dApp {
                         Ok(handle) => {
                             // Enable all auto-animations for desktop pet
                             if self.is_desktop_pet() {
-                                eprintln!("[DEBUG] Model loaded, configuring auto-animations...");
-
-                                // Check if model has eye parameters
-                                if let Some(model) = engine.models.get(handle.index) {
-                                    let param_ids = model.runtime.parameter_ids();
-                                    eprintln!("[DEBUG] Model has {} parameters", param_ids.len());
-                                    for (i, id) in param_ids.iter().enumerate() {
-                                        if id.contains("Eye") || id.contains("Mouth") || id.contains("Body") {
-                                            eprintln!("[DEBUG] Parameter[{}]: {}", i, id);
-                                        }
-                                    }
-                                }
-
                                 // Configure more visible and lively animations for desktop pet
                                 use crate::auto::{EyeBlinkConfig, BreathConfig};
 
@@ -1148,12 +1110,11 @@ impl Live2dApp {
                                 if let Some(model) = engine.models.get(handle.index) {
                                     if let Some(idx) = model.runtime.parameter_index("ParamBodyAngleY") {
                                         let breath_config = BreathConfig {
-                                            cycle_speed: 0.3,  // Faster breathing
-                                            weight: 0.15,      // Stronger effect (was 1.0 but in 0-1 range)
+                                            cycle_speed: 0.3,
+                                            weight: 0.15,
                                             parameter_indices: vec![idx],
                                         };
                                         engine.configure_breath(&handle, Some(breath_config));
-                                        eprintln!("[DEBUG] Breath configured for ParamBodyAngleY (index {})", idx);
                                     } else {
                                         engine.configure_breath(&handle, Some(Default::default()));
                                     }
@@ -1163,16 +1124,6 @@ impl Live2dApp {
 
                                 engine.configure_lip_sync(&handle, Some(Default::default()));
                                 engine.configure_mouse_tracker(&handle, Some(Default::default()));
-
-                                eprintln!("[DEBUG] Auto-animations configured");
-
-                                // Verify animations are set
-                                if let Some(model) = engine.models.get(handle.index) {
-                                    eprintln!("[DEBUG] eye_blink: {:?}", model.animation.eye_blink.is_some());
-                                    eprintln!("[DEBUG] breath: {:?}", model.animation.breath.is_some());
-                                    eprintln!("[DEBUG] lip_sync: {:?}", model.animation.lip_sync.is_some());
-                                    eprintln!("[DEBUG] mouse_tracker: {:?}", model.animation.mouse_tracker.is_some());
-                                }
                             }
                         }
                         Err(e) => {

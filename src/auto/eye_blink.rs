@@ -86,19 +86,9 @@ impl EyeBlink {
         let dt = delta_seconds.max(0.0);
         self.timer += dt;
 
-        static FIRST_TICK: std::sync::Once = std::sync::Once::new();
-        FIRST_TICK.call_once(|| {
-            eprintln!("[DEBUG] EyeBlink::tick() first call: next_interval={:.2}s", self.next_interval);
-        });
-
-        let old_phase = self.phase;
-        let old_value = self.blink_value;
-
         match self.phase {
             BlinkPhase::Open => {
                 if self.timer >= self.next_interval {
-                    eprintln!("[DEBUG] EyeBlink: Starting blink! timer={:.2}, next_interval={:.2}",
-                        self.timer, self.next_interval);
                     self.phase = BlinkPhase::Closing;
                     self.timer = 0.0;
                 }
