@@ -1130,22 +1130,36 @@ impl Live2dApp {
                                     }
                                 }
 
-                                // Configure slower, more visible eye blink for desktop pet
-                                use crate::auto::EyeBlinkConfig;
+                                // Configure more visible and lively animations for desktop pet
+                                use crate::auto::{EyeBlinkConfig, BreathConfig};
+
+                                // More frequent, slower eye blinks
                                 let blink_config = EyeBlinkConfig {
-                                    min_interval: 2.0,
-                                    max_interval: 5.0,
-                                    close_duration: 0.3,  // Slower (was 0.1s)
-                                    open_duration: 0.4,   // Slower (was 0.15s)
+                                    min_interval: 1.5,
+                                    max_interval: 3.5,
+                                    close_duration: 0.15,
+                                    open_duration: 0.15,
                                     weight: 1.0,
                                     parameter_indices: Vec::new(),
                                 };
                                 engine.configure_eye_blink(&handle, Some(blink_config));
 
-                                // Breath: use ParamBodyAngleY since this model doesn't have ParamBreath
-                                // TODO: Make breath config support custom parameter names
-                                // For now, breath won't work on models without ParamBreath
-                                engine.configure_breath(&handle, Some(Default::default()));
+                                // Configure breath to use ParamBodyAngleY with stronger effect
+                                if let Some(model) = engine.models.get(handle.index) {
+                                    if let Some(idx) = model.runtime.parameter_index("ParamBodyAngleY") {
+                                        let breath_config = BreathConfig {
+                                            cycle_speed: 0.3,  // Faster breathing
+                                            weight: 0.15,      // Stronger effect (was 1.0 but in 0-1 range)
+                                            parameter_indices: vec![idx],
+                                        };
+                                        engine.configure_breath(&handle, Some(breath_config));
+                                        eprintln!("[DEBUG] Breath configured for ParamBodyAngleY (index {})", idx);
+                                    } else {
+                                        engine.configure_breath(&handle, Some(Default::default()));
+                                    }
+                                } else {
+                                    engine.configure_breath(&handle, Some(Default::default()));
+                                }
 
                                 engine.configure_lip_sync(&handle, Some(Default::default()));
                                 engine.configure_mouse_tracker(&handle, Some(Default::default()));
