@@ -7,6 +7,7 @@ use std::path::Path;
 fn collect_physics_files() -> Vec<(String, String)> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/models");
     let mut files = Vec::new();
+    #[allow(clippy::collapsible_if)]
     if let Ok(entries) = fs::read_dir(&root) {
         for entry in entries.flatten() {
             let model_path = entry.path();
@@ -47,9 +48,10 @@ fn physics3_meta_fields_are_valid() {
         let meta = physics.meta();
 
         assert!(meta.physics_setting_count() > 0, "{}: no physics settings", name);
-        assert!(meta.total_input_count() >= 0, "{}: negative input count", name);
-        assert!(meta.total_output_count() >= 0, "{}: negative output count", name);
-        assert!(meta.vertex_count() >= 0, "{}: negative vertex count", name);
+        // Total counts are unsigned, so >= 0 check is redundant
+        assert!(meta.total_input_count() < 10000, "{}: suspiciously high input count", name);
+        assert!(meta.total_output_count() < 10000, "{}: suspiciously high output count", name);
+        assert!(meta.vertex_count() < 10000, "{}: suspiciously high vertex count", name);
     }
 }
 

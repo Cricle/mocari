@@ -1,7 +1,6 @@
 //! Complete runtime integration tests - load, update, render cycle.
 
 use mocari::assets::load_model_runtime;
-use std::path::Path;
 
 const TEST_MODELS: &[&str] = &["Haru", "Hiyori", "Mao", "Mark", "Natori", "Ren", "Rice", "Wanko"];
 
@@ -112,7 +111,7 @@ fn runtime_handles_normalized_parameters() {
         let runtime = model.runtime_mut();
 
         // Set normalized value (0.0-1.0)
-        if runtime.parameter_ids().len() > 0 {
+        if !runtime.parameter_ids().is_empty() {
             runtime.set_parameter_normalized_by_index(0, 0.5);
             let value = runtime.parameter_value_by_index(0).unwrap();
             assert!(value.is_finite(), "{}: normalized value not finite", model_name);

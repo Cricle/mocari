@@ -7,6 +7,7 @@ use std::path::Path;
 fn collect_model3_files() -> Vec<(String, String)> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/models");
     let mut files = Vec::new();
+    #[allow(clippy::collapsible_if)]
     if let Ok(entries) = fs::read_dir(&root) {
         for entry in entries.flatten() {
             let model_path = entry.path();

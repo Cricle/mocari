@@ -56,6 +56,8 @@ pub mod motion;
 pub mod render;
 /// Auto-animation features for eye blink, lip sync, breath, and mouse tracking.
 pub mod auto;
+/// Streaming texture decoder for reduced memory usage.
+pub mod streaming_texture;
 /// High-level engine that encapsulates wgpu setup, rendering, and animation.
 #[cfg(feature = "wgpu")]
 pub mod engine;
