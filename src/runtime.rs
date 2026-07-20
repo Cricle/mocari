@@ -154,6 +154,8 @@ pub struct ModelRuntime {
     // Dirty tracking: when false after a frame, skip mesh rebuild
     dirtied: bool,
     parameter_values_generation: u64,
+    // Per-drawable dirty tracking for incremental updates
+    drawable_dirty: Vec<bool>,
 }
 
 impl ModelRuntime {
@@ -234,6 +236,7 @@ impl ModelRuntime {
             scratch_part_enable: Vec::new(),
             dirtied: true,
             parameter_values_generation: 0,
+            drawable_dirty: vec![true; drawable_count],
         };
         runtime.update_meshes()?;
         Some(runtime)
@@ -363,6 +366,9 @@ impl ModelRuntime {
             *slot = clamped;
             self.parameter_values_generation = self.parameter_values_generation.wrapping_add(1);
             self.dirtied = true;
+            // Mark all drawables dirty when parameters change
+            // TODO: track parameter->drawable dependencies for finer granularity
+            self.drawable_dirty.fill(true);
         }
         true
     }

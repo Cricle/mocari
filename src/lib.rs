@@ -38,6 +38,8 @@
 
 /// Filesystem helpers for loading model assets and decoded textures.
 pub mod assets;
+/// Buffer pooling for reducing allocations during mesh updates.
+pub mod buffer_pool;
 /// Math, interpolation, parameter, and physics primitives used by the runtime.
 pub mod core;
 /// Shared error types returned by parsers and lower-level runtime code.
