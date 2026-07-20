@@ -321,6 +321,23 @@ impl Live2dEngine {
     /// Advances all models' animation state by `delta` seconds.
     /// Call this once per frame before `render()`.
     pub fn tick(&mut self, delta: f32) {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static TICK_COUNT: AtomicU32 = AtomicU32::new(0);
+
+        let count = TICK_COUNT.fetch_add(1, Ordering::Relaxed);
+        if count == 0 || count % 120 == 0 {
+            eprintln!("[DEBUG] tick() called: frame={}, delta={:.3}s, models={}",
+                count + 1, delta, self.models.len());
+            for (i, model) in self.models.iter().enumerate() {
+                eprintln!("[DEBUG]   model[{}]: animating={}, eye_blink={}, breath={}",
+                    i,
+                    model::is_animating(model),
+                    model.animation.eye_blink.is_some(),
+                    model.animation.breath.is_some()
+                );
+            }
+        }
+
         self.last_delta = delta;
 
         for model in &mut self.models {
